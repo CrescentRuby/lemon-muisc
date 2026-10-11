@@ -1366,12 +1366,17 @@ watch(currentPlaying, () => {
   z-index: 2;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(240px, 380px) 1fr;
-  gap: 32px;
-  padding: calc(64px + env(safe-area-inset-top, 0px)) 40px 16px;
+  /* 封面+歌词收成一块，整体水平居中（避免歌词 1fr 拉满导致视觉偏左） */
+  grid-template-columns: minmax(240px, 360px) minmax(280px, 640px);
+  justify-content: center;
+  justify-items: stretch;
+  gap: 96px;
+  padding: calc(64px + env(safe-area-inset-top, 0px)) 48px 16px;
   min-height: 0;
   overflow: hidden;
   align-items: center;
+  width: 100%;
+  box-sizing: border-box;
 }
 .fs-cover-col {
   display: flex;
@@ -2060,12 +2065,13 @@ watch(currentPlaying, () => {
   opacity: 0;
 }
 
-/* 平板：左右分栏收紧，封面略小、歌词区更大 */
+/* 平板：左右分栏收紧，封面略小、歌词区更大；整体仍居中 */
 @media (min-width: 861px) and (max-width: 1100px) {
   .fs-body {
-    grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
-    gap: 20px;
-    padding: calc(56px + env(safe-area-inset-top, 0px)) 24px 14px;
+    grid-template-columns: minmax(200px, 280px) minmax(260px, 520px);
+    justify-content: center;
+    gap: 56px;
+    padding: calc(56px + env(safe-area-inset-top, 0px)) 28px 14px;
   }
   .fs-cover {
     width: min(260px, 34vw);
