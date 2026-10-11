@@ -95,13 +95,27 @@ add('/auth/login', 'post', '登录', {
 add('/auth/logout', 'post', '登出', { tag: 'auth' })
 add('/auth/me', 'get', '当前用户', { tag: 'auth' })
 add('/auth/profile', 'patch', '更新资料', { tag: 'auth', body: {} })
+add('/auth/complete-default-account', 'post', '完成默认账号改密/改名', {
+  tag: 'auth',
+  description: '首次使用默认账号登录后，强制修改用户名与密码时调用',
+  body: {
+    schema: {
+      type: 'object',
+      properties: {
+        username: { type: 'string' },
+        password: { type: 'string' },
+        displayName: { type: 'string' },
+      },
+    },
+  },
+})
 add('/auth/change-password', 'post', '修改密码', { tag: 'auth', body: {} })
 add('/auth/users', 'get', '用户列表', { tag: 'auth', admin: true })
 add('/auth/users', 'post', '创建用户', { tag: 'auth', admin: true, body: {} })
 add('/auth/users/{id}', 'delete', '删除用户', { tag: 'auth', admin: true, parameters: [p('id', '用户 ID')] })
 add('/auth/users/{id}/reset-password', 'post', '重置用户密码', { tag: 'auth', admin: true, parameters: [p('id', '用户 ID')], body: {} })
 add('/auth/users/{id}', 'patch', '更新用户', { tag: 'auth', admin: true, parameters: [p('id', '用户 ID')], body: {} })
-add('/auth/forgot-password', 'post', '忘记密码', { tag: 'auth', auth: false, body: {} })
+add('/auth/forgot-password', 'post', '忘记密码（发邮件）', { tag: 'auth', auth: false, body: {} })
 add('/auth/reset-password', 'post', '重置密码（令牌）', { tag: 'auth', auth: false, body: {} })
 add('/auth/verify-email', 'post', '验证邮箱', { tag: 'auth', auth: false, body: {} })
 add('/auth/resend-verification', 'post', '重发验证邮件', { tag: 'auth' })
@@ -122,11 +136,55 @@ add('/settings/ffmpeg/disable', 'post', '禁用 ffmpeg', { tag: 'settings', admi
 // —— Source ——
 add('/source/list', 'get', '音源列表', { tag: 'source' })
 add('/source/import', 'post', '导入音源脚本（文件）', { tag: 'source', admin: true, body: { contentType: 'multipart/form-data' } })
-add('/source/import-url', 'post', '从 URL 导入音源', { tag: 'source', admin: true, body: {} })
+add('/source/import-url', 'post', '从 URL 批量导入音源', {
+  tag: 'source',
+  admin: true,
+  description: 'body.url 或 body.urls[]：http(s) 脚本地址',
+  body: {
+    schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        urls: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
+})
+add('/source/check-updates', 'post', '检查音源脚本更新', {
+  tag: 'source',
+  admin: true,
+  description: '可选 body.id 只检查单个音源；否则检查全部可更新项',
+  body: {},
+})
+add('/source/update/{id}', 'post', '更新指定音源脚本', {
+  tag: 'source',
+  admin: true,
+  parameters: [p('id', '音源 ID')],
+  body: {
+    schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '可选，覆盖脚本来源 URL' },
+      },
+    },
+  },
+})
 add('/source/{id}', 'delete', '删除音源', { tag: 'source', admin: true, parameters: [p('id', '音源 ID')] })
 add('/source/fault', 'get', '音源故障信息', { tag: 'source' })
 add('/source/fault/dismiss', 'post', '忽略故障提示', { tag: 'source' })
-add('/source/health/report', 'post', '上报音源健康', { tag: 'source', body: {} })
+add('/source/health/report', 'post', '上报音源健康（试听片段检测）', {
+  tag: 'source',
+  body: {
+    schema: {
+      type: 'object',
+      properties: {
+        sourceId: { type: 'string' },
+        isPreview: { type: 'boolean' },
+        platform: { type: 'string', description: 'kw/tx/wy/kg/mg' },
+      },
+    },
+  },
+})
 add('/source/health/dismiss', 'post', '忽略健康提示', { tag: 'source', body: {} })
 add('/source/health/clear', 'post', '清除健康记录', { tag: 'source', admin: true })
 add('/source/fault/delete', 'post', '删除故障音源', { tag: 'source', admin: true })
@@ -134,7 +192,10 @@ add('/source/fault/reimport', 'post', '重导故障音源', { tag: 'source', adm
 add('/source/activate/{id}', 'post', '激活音源', { tag: 'source', parameters: [p('id', '音源 ID')] })
 add('/source/deactivate/{id}', 'post', '停用音源', { tag: 'source', parameters: [p('id', '音源 ID')] })
 add('/source/deactivate', 'post', '停用全部', { tag: 'source' })
-add('/source/active', 'get', '当前激活音源', { tag: 'source' })
+add('/source/active', 'get', '当前激活音源', {
+  tag: 'source',
+  description: '返回 ids（用户激活顺序）、list（已加载脚本及声明平台）、id（最近激活）',
+})
 add('/source/request', 'post', '代理音源请求', { tag: 'source', body: {} })
 add('/source/refresh-meta', 'post', '刷新音源元数据', { tag: 'source', admin: true })
 
@@ -170,7 +231,7 @@ add('/play/ticket', 'post', '签发/续签媒体票', {
       type: 'object',
       properties: {
         url: { type: 'string', description: '相对流式路径' },
-        trackId: { type: 'string' },
+        trackId: { type: 'string', description: '库内稳定 UUID' },
         localPath: { type: 'string' },
         ttlSec: { type: 'integer' },
       },
@@ -179,35 +240,113 @@ add('/play/ticket', 'post', '签发/续签媒体票', {
 })
 add('/play/url', 'post', '解析播放地址', {
   tag: 'play',
-  description: '本地：传 trackId 或 localPath/filePath；在线：传 songId+source。返回的 url 带 ?ticket=',
+  description: [
+    '本地：传库内 `trackId`（UUID）或 `localPath`/`filePath`。',
+    '在线：传平台 `songId`（或 songmid/hash 等）+ `source`（kw/tx/wy/kg/mg）+ 可选 `quality`。',
+    '',
+    '**重要**：在线曲目的平台 id 不得当作库 `trackId`。仅 UUID 形态（或显式 `trackId`）才走库内查找；否则会 404 `TRACK_NOT_FOUND`。',
+    '',
+    '`smooth=true` 时本地无损可走 AAC 转码流（需服务器 ffmpeg；APE 始终走 `/play/local-ape`）。',
+    '',
+    '多音源：可用 `sourceApiId` 锁定脚本，或 `skipSourceIds` 跳过已失败脚本；失败且设置为询问模式时返回 409 `SOURCE_FALLBACK_REQUIRED`。',
+    '',
+    '成功时 `url` 为带 `?ticket=` 的相对路径，拼上 HOST 即可播放。',
+  ].join('\n'),
   body: {
     schema: {
       type: 'object',
       properties: {
-        trackId: { type: 'string' },
+        trackId: { type: 'string', description: '库内稳定 UUID；勿填平台 songId' },
+        id: { type: 'string', description: '仅当值为库 UUID 且无在线身份字段时才当 trackId' },
         localPath: { type: 'string' },
         filePath: { type: 'string' },
-        songId: { type: 'string' },
-        source: { type: 'string' },
-        quality: { type: 'string' },
-        smooth: { type: 'boolean' },
-        refresh: { type: 'boolean' },
+        songId: { type: 'string', description: '在线曲目平台 ID' },
+        songmid: { type: 'string' },
+        hash: { type: 'string' },
+        copyrightId: { type: 'string' },
+        source: { type: 'string', description: '平台：kw/tx/wy/kg/mg/local' },
+        quality: { type: 'string', description: '如 128k / 320k / flac / flac24bit / master' },
+        smooth: { type: 'boolean', description: '本地是否请求 AAC 流畅转码' },
+        refresh: { type: 'boolean', description: '跳过播放链缓存' },
+        sourceApiId: { type: 'string', description: '锁定使用的音源脚本 ID' },
+        skipSourceIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '跳过的音源脚本 ID 列表',
+        },
       },
+    },
+  },
+  responses: {
+    '200': {
+      description: '成功',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/PlayUrlResponse' },
+        },
+      },
+    },
+    '404': {
+      description: '库曲目未找到 (TRACK_NOT_FOUND)',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+    },
+    '409': {
+      description: '需选择备用音源 (SOURCE_FALLBACK_REQUIRED)',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+    },
+    '401': {
+      description: '未登录',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
     },
   },
 })
 add('/play/local', 'get', '本地音频流', {
   tag: 'play',
-  parameters: [q('path', '绝对路径'), q('ticket', '媒体票'), q('token', '会话 JWT（兼容）')],
+  parameters: [
+    q('trackId', '库内稳定 UUID（优先）'),
+    q('path', '绝对路径（兼容）'),
+    q('ticket', '媒体票'),
+    q('token', '会话 JWT（兼容）'),
+  ],
   responses: { '200': { description: 'audio/* Range 流' } },
 })
-add('/play/local-ape', 'get', 'APE 转码流', { tag: 'play', parameters: [q('path', '路径'), q('ticket', '媒体票')] })
-add('/play/local-smooth', 'get', '流畅 AAC 流', { tag: 'play', parameters: [q('path', '路径'), q('ticket', '媒体票')] })
-add('/play/smooth-warmup', 'post', '预热下一首 AAC', { tag: 'play', body: {} })
-add('/play/proxy', 'get', '远程音频反代', { tag: 'play', parameters: [q('url', '远程 URL'), q('source', '平台'), q('ticket', '媒体票')] })
+add('/play/local-ape', 'get', 'APE 转码流（WAV）', {
+  tag: 'play',
+  parameters: [q('trackId', '库 UUID'), q('path', '路径'), q('ticket', '媒体票')],
+  responses: { '200': { description: 'audio/* Range 流' } },
+})
+add('/play/local-smooth', 'get', '本地 AAC 流畅转码流', {
+  tag: 'play',
+  description: '需 ffmpeg；客户端应在用户开启「本地转码」时再请求',
+  parameters: [q('trackId', '库 UUID'), q('path', '路径'), q('ticket', '媒体票')],
+  responses: { '200': { description: 'audio/* Range 流' } },
+})
+add('/play/smooth-warmup', 'post', '预热下一首 AAC', {
+  tag: 'play',
+  description: '后台转码缓存，减轻切歌卡顿（仅开本地转码时有意义）',
+  body: {
+    schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        trackId: { type: 'string' },
+        filePath: { type: 'string' },
+      },
+    },
+  },
+})
+add('/play/proxy', 'get', '远程音频反代', {
+  tag: 'play',
+  parameters: [q('url', '远程 URL'), q('source', '平台'), q('ticket', '媒体票')],
+  responses: { '200': { description: 'audio/* Range 流' } },
+})
 add('/play/lyric', 'post', '获取歌词', { tag: 'play', body: {} })
 add('/play/cover', 'post', '获取封面元数据', { tag: 'play', body: {} })
-add('/play/cover-img', 'get', '封面图片', { tag: 'play', parameters: [q('url', '封面 URL'), q('ticket', '媒体票')], responses: { '200': { description: 'image/*' } } })
+add('/play/cover-img', 'get', '封面图片', {
+  tag: 'play',
+  parameters: [q('url', '封面 URL'), q('ticket', '媒体票')],
+  responses: { '200': { description: 'image/*' } },
+})
 
 // —— Download ——
 add('/download/list', 'get', '下载任务列表', { tag: 'download' })
@@ -216,6 +355,8 @@ add('/download/playlist-jobs', 'get', '循序下载任务列表', { tag: 'downlo
 add('/download/playlist-jobs/active', 'get', '进行中的循序任务', { tag: 'download' })
 add('/download/playlist-job', 'post', '创建循序下载', { tag: 'download', body: {} })
 add('/download/playlist-job/{id}/cancel', 'post', '取消循序下载', { tag: 'download', parameters: [p('id', '任务 ID')] })
+add('/download/playlist-job/{id}/pause', 'post', '暂停循序下载', { tag: 'download', parameters: [p('id', '任务 ID')] })
+add('/download/playlist-job/{id}/continue', 'post', '继续循序下载', { tag: 'download', parameters: [p('id', '任务 ID')] })
 add('/download/playlist-job/{id}', 'get', '循序下载详情', { tag: 'download', parameters: [p('id', '任务 ID')] })
 add('/download/pause/{id}', 'post', '暂停任务', { tag: 'download', parameters: [p('id', '任务 ID')] })
 add('/download/resume/{id}', 'post', '继续任务', { tag: 'download', parameters: [p('id', '任务 ID')] })
@@ -310,6 +451,10 @@ add('/paths/download/personal', 'put', '个人下载目录', { tag: 'paths', bod
 
 // —— About / Backup ——
 add('/about', 'get', '关于 / 版本信息', { tag: 'about' })
+add('/about/diagnostics', 'get', '运行诊断（HTTPS/路径等）', {
+  tag: 'about',
+  description: '供关于页与运维排查；含证书探测、监听模式等摘要',
+})
 add('/about/download-fpk', 'post', '下载 FPK 更新包到 NAS', { tag: 'about', admin: true, body: {} })
 add('/about/download-fpk/status', 'get', 'FPK 下载状态', { tag: 'about', admin: true })
 add('/backup/export', 'get', '导出备份', { tag: 'backup' })
@@ -325,7 +470,11 @@ const spec = {
       '',
       '鉴权：`Authorization: Bearer <sessionToken>`；音频流可用 `?ticket=` 短时效媒体票（也可兼容 `?token=` 会话 JWT）。',
       '',
-      '曲目稳定 ID：`id` / `trackId`（UUID），路径变更后保持不变；仍返回 `filePath` 以兼容 Web。',
+      '曲目稳定 ID：库内 `id` / `trackId` 为 UUID；在线曲目请用 `songId`+`source`，勿把平台 id 当作 trackId。',
+      '',
+      '播放换源：同一次 `/play/url` 内可用 `sourceApiId` / `skipSourceIds` 控制音源脚本；跨平台搜曲由客户端自行完成后再调本接口。',
+      '',
+      '本地转码：`smooth=true` 请求 AAC 流；关闭用户设置「本地转码」时客户端应直出 `/play/local`。',
       '',
       '人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。',
     ].join('\n'),
@@ -433,6 +582,22 @@ const spec = {
           docs: { type: 'string' },
           ws: { type: 'string' },
           prefixes: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      PlayUrlResponse: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+          url: { type: 'string', description: '相对播放路径，含 ticket' },
+          local: { type: 'boolean' },
+          smooth: { type: 'boolean' },
+          format: { type: 'string' },
+          cached: { type: 'boolean' },
+          sourceInfo: {
+            type: 'object',
+            description: '实际取链的音源脚本信息',
+            additionalProperties: true,
+          },
         },
       },
     },

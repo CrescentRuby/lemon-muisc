@@ -2,8 +2,8 @@
 openapi: 3.1.0
 info:
   title: Lemon Music Open API
-  version: 1.2.16.19
-  description: "柠檬音乐自托管开放 API。路径同时挂载在 `/api` 与 `/api/v1`（推荐客户端使用 `/api/v1`）。\n\n鉴权：`Authorization: Bearer <sessionToken>`；音频流可用 `?ticket=` 短时效媒体票（也可兼容 `?token=` 会话 JWT）。\n\n曲目稳定 ID：`id` / `trackId`（UUID），路径变更后保持不变；仍返回 `filePath` 以兼容 Web。\n\n人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。"
+  version: 1.2.17.3
+  description: "柠檬音乐自托管开放 API。路径同时挂载在 `/api` 与 `/api/v1`（推荐客户端使用 `/api/v1`）。\n\n鉴权：`Authorization: Bearer <sessionToken>`；音频流可用 `?ticket=` 短时效媒体票（也可兼容 `?token=` 会话 JWT）。\n\n曲目稳定 ID：库内 `id` / `trackId` 为 UUID；在线曲目请用 `songId`+`source`，勿把平台 id 当作 trackId。\n\n播放换源：同一次 `/play/url` 内可用 `sourceApiId` / `skipSourceIds` 控制音源脚本；跨平台搜曲由客户端自行完成后再调本接口。\n\n本地转码：`smooth=true` 请求 AAC 流；关闭用户设置「本地转码」时客户端应直出 `/play/local`。\n\n人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。"
   license:
     name: MIT
 servers:
@@ -311,6 +311,40 @@ paths:
             schema:
               type: object
               additionalProperties: true
+  /auth/complete-default-account:
+    post:
+      tags:
+        - auth
+      summary: 完成默认账号改密/改名
+      description: 首次使用默认账号登录后，强制修改用户名与密码时调用
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                displayName:
+                  type: string
   /auth/change-password:
     post:
       tags:
@@ -517,7 +551,7 @@ paths:
     post:
       tags:
         - auth
-      summary: 忘记密码
+      summary: 忘记密码（发邮件）
       security: []
       responses:
         200:
@@ -951,8 +985,48 @@ paths:
     post:
       tags:
         - source
-      summary: 从 URL 导入音源
-      description: 需要管理员权限 (admin)
+      summary: 从 URL 批量导入音源
+      description: "body.url 或 body.urls[]：http(s) 脚本地址\n\n需要管理员权限 (admin)"
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        403:
+          description: 需要管理员
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                urls:
+                  type: array
+                  items:
+                    type: string
+  /source/check-updates:
+    post:
+      tags:
+        - source
+      summary: 检查音源脚本更新
+      description: "可选 body.id 只检查单个音源；否则检查全部可更新项\n\n需要管理员权限 (admin)"
       security:
         - bearerAuth: []
       responses:
@@ -981,6 +1055,50 @@ paths:
             schema:
               type: object
               additionalProperties: true
+  "/source/update/{id}":
+    post:
+      tags:
+        - source
+      summary: 更新指定音源脚本
+      description: 需要管理员权限 (admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 音源 ID
+          schema:
+          type: string
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        403:
+          description: 需要管理员
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: 可选，覆盖脚本来源 URL
   "/source/{id}":
     delete:
       tags:
@@ -1059,7 +1177,7 @@ paths:
     post:
       tags:
         - source
-      summary: 上报音源健康
+      summary: 上报音源健康（试听片段检测）
       security:
         - bearerAuth: []
       responses:
@@ -1081,7 +1199,14 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: true
+              properties:
+                sourceId:
+                  type: string
+                isPreview:
+                  type: boolean
+                platform:
+                  type: string
+                  description: kw/tx/wy/kg/mg
   /source/health/dismiss:
     post:
       tags:
@@ -1269,6 +1394,7 @@ paths:
       tags:
         - source
       summary: 当前激活音源
+      description: 返回 ids（用户激活顺序）、list（已加载脚本及声明平台）、id（最近激活）
       security:
         - bearerAuth: []
       responses:
@@ -1778,6 +1904,7 @@ paths:
                   description: 相对流式路径
                 trackId:
                   type: string
+                  description: 库内稳定 UUID
                 localPath:
                   type: string
                 ttlSec:
@@ -1787,7 +1914,170 @@ paths:
       tags:
         - play
       summary: 解析播放地址
-      description: 本地：传 trackId 或 localPath/filePath；在线：传 songId+source。返回的 url 带 ?ticket=
+      description: "本地：传库内 `trackId`（UUID）或 `localPath`/`filePath`。\n在线：传平台 `songId`（或 songmid/hash 等）+ `source`（kw/tx/wy/kg/mg）+ 可选 `quality`。\n\n**重要**：在线曲目的平台 id 不得当作库 `trackId`。仅 UUID 形态（或显式 `trackId`）才走库内查找；否则会 404 `TRACK_NOT_FOUND`。\n\n`smooth=true` 时本地无损可走 AAC 转码流（需服务器 ffmpeg；APE 始终走 `/play/local-ape`）。\n\n多音源：可用 `sourceApiId` 锁定脚本，或 `skipSourceIds` 跳过已失败脚本；失败且设置为询问模式时返回 409 `SOURCE_FALLBACK_REQUIRED`。\n\n成功时 `url` 为带 `?ticket=` 的相对路径，拼上 HOST 即可播放。"
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PlayUrlResponse"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        404:
+          description: 库曲目未找到 (TRACK_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        409:
+          description: 需选择备用音源 (SOURCE_FALLBACK_REQUIRED)
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trackId:
+                  type: string
+                  description: 库内稳定 UUID；勿填平台 songId
+                id:
+                  type: string
+                  description: 仅当值为库 UUID 且无在线身份字段时才当 trackId
+                localPath:
+                  type: string
+                filePath:
+                  type: string
+                songId:
+                  type: string
+                  description: 在线曲目平台 ID
+                songmid:
+                  type: string
+                hash:
+                  type: string
+                copyrightId:
+                  type: string
+                source:
+                  type: string
+                  description: 平台：kw/tx/wy/kg/mg/local
+                quality:
+                  type: string
+                  description: 如 128k / 320k / flac / flac24bit / master
+                smooth:
+                  type: boolean
+                  description: 本地是否请求 AAC 流畅转码
+                refresh:
+                  type: boolean
+                  description: 跳过播放链缓存
+                sourceApiId:
+                  type: string
+                  description: 锁定使用的音源脚本 ID
+                skipSourceIds:
+                  type: array
+                  items:
+                    type: string
+                  description: 跳过的音源脚本 ID 列表
+  /play/local:
+    get:
+      tags:
+        - play
+      summary: 本地音频流
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: trackId
+          in: query
+          description: 库内稳定 UUID（优先）
+          schema:
+          type: string
+        - name: path
+          in: query
+          description: 绝对路径（兼容）
+          schema:
+          type: string
+        - name: ticket
+          in: query
+          description: 媒体票
+          schema:
+          type: string
+        - name: token
+          in: query
+          description: 会话 JWT（兼容）
+          schema:
+          type: string
+      responses:
+        200:
+          description: "audio/* Range 流"
+  /play/local-ape:
+    get:
+      tags:
+        - play
+      summary: APE 转码流（WAV）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: trackId
+          in: query
+          description: 库 UUID
+          schema:
+          type: string
+        - name: path
+          in: query
+          description: 路径
+          schema:
+          type: string
+        - name: ticket
+          in: query
+          description: 媒体票
+          schema:
+          type: string
+      responses:
+        200:
+          description: "audio/* Range 流"
+  /play/local-smooth:
+    get:
+      tags:
+        - play
+      summary: 本地 AAC 流畅转码流
+      description: 需 ffmpeg；客户端应在用户开启「本地转码」时再请求
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: trackId
+          in: query
+          description: 库 UUID
+          schema:
+          type: string
+        - name: path
+          in: query
+          description: 路径
+          schema:
+          type: string
+        - name: ticket
+          in: query
+          description: 媒体票
+          schema:
+          type: string
+      responses:
+        200:
+          description: "audio/* Range 流"
+  /play/smooth-warmup:
+    post:
+      tags:
+        - play
+      summary: 预热下一首 AAC
+      description: 后台转码缓存，减轻切歌卡顿（仅开本地转码时有意义）
       security:
         - bearerAuth: []
       responses:
@@ -1810,137 +2100,12 @@ paths:
             schema:
               type: object
               properties:
-                trackId:
+                path:
                   type: string
-                localPath:
+                trackId:
                   type: string
                 filePath:
                   type: string
-                songId:
-                  type: string
-                source:
-                  type: string
-                quality:
-                  type: string
-                smooth:
-                  type: boolean
-                refresh:
-                  type: boolean
-  /play/local:
-    get:
-      tags:
-        - play
-      summary: 本地音频流
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: path
-          in: query
-          description: 绝对路径
-          schema:
-          type: string
-        - name: ticket
-          in: query
-          description: 媒体票
-          schema:
-          type: string
-        - name: token
-          in: query
-          description: 会话 JWT（兼容）
-          schema:
-          type: string
-      responses:
-        200:
-          description: "audio/* Range 流"
-  /play/local-ape:
-    get:
-      tags:
-        - play
-      summary: APE 转码流
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: path
-          in: query
-          description: 路径
-          schema:
-          type: string
-        - name: ticket
-          in: query
-          description: 媒体票
-          schema:
-          type: string
-      responses:
-        200:
-          description: 成功
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        401:
-          description: 未登录
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  /play/local-smooth:
-    get:
-      tags:
-        - play
-      summary: 流畅 AAC 流
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: path
-          in: query
-          description: 路径
-          schema:
-          type: string
-        - name: ticket
-          in: query
-          description: 媒体票
-          schema:
-          type: string
-      responses:
-        200:
-          description: 成功
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        401:
-          description: 未登录
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  /play/smooth-warmup:
-    post:
-      tags:
-        - play
-      summary: 预热下一首 AAC
-      security:
-        - bearerAuth: []
-      responses:
-        200:
-          description: 成功
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        401:
-          description: 未登录
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
   /play/proxy:
     get:
       tags:
@@ -1966,17 +2131,7 @@ paths:
           type: string
       responses:
         200:
-          description: 成功
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        401:
-          description: 未登录
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
+          description: "audio/* Range 流"
   /play/lyric:
     post:
       tags:
@@ -2171,6 +2326,60 @@ paths:
       tags:
         - download
       summary: 取消循序下载
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 任务 ID
+          schema:
+          type: string
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/download/playlist-job/{id}/pause":
+    post:
+      tags:
+        - download
+      summary: 暂停循序下载
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 任务 ID
+          schema:
+          type: string
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/download/playlist-job/{id}/continue":
+    post:
+      tags:
+        - download
+      summary: 继续循序下载
       security:
         - bearerAuth: []
       parameters:
@@ -4085,6 +4294,27 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+  /about/diagnostics:
+    get:
+      tags:
+        - about
+      summary: 运行诊断（HTTPS/路径等）
+      description: 供关于页与运维排查；含证书探测、监听模式等摘要
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: 成功
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        401:
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
   /about/download-fpk:
     post:
       tags:
@@ -4294,3 +4524,23 @@ components:
           type: array
           items:
             type: string
+    PlayUrlResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        url:
+          type: string
+          description: 相对播放路径，含 ticket
+        local:
+          type: boolean
+        smooth:
+          type: boolean
+        format:
+          type: string
+        cached:
+          type: boolean
+        sourceInfo:
+          type: object
+          description: 实际取链的音源脚本信息
+          additionalProperties: true

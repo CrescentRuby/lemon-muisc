@@ -42,14 +42,20 @@ function readAppVersion() {
 }
 
 function loadOpenApiSpec() {
+  const appVersion = readAppVersion()
   try {
     const file = openApiJsonPath()
     if (file) {
       const st = fs.statSync(file)
-      if (cachedSpec && cachedPath === file && st.mtimeMs === cachedMtime) return cachedSpec
+      if (cachedSpec && cachedPath === file && st.mtimeMs === cachedMtime) {
+        // 运行时以 package.json 版本为准，避免规格文件未重建时版本滞后
+        if (cachedSpec?.info) cachedSpec.info.version = appVersion
+        return cachedSpec
+      }
       cachedSpec = JSON.parse(fs.readFileSync(file, 'utf8'))
       cachedMtime = st.mtimeMs
       cachedPath = file
+      if (cachedSpec?.info) cachedSpec.info.version = appVersion
       return cachedSpec
     }
   } catch (e) {
@@ -59,7 +65,7 @@ function loadOpenApiSpec() {
     openapi: '3.1.0',
     info: {
       title: 'Lemon Music Open API',
-      version: readAppVersion(),
+      version: appVersion,
       description: '规格文件缺失，请确认 docs/openapi.json 已生成',
     },
     paths: {},
