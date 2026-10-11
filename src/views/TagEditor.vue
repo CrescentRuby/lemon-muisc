@@ -549,7 +549,7 @@
             <span v-if="isFieldSuspect('artist') && tagCheckResult?.suggested?.artist" class="suspect-tip">
               建议：{{ tagCheckResult.suggested.artist }}
             </span>
-            <span class="field-hint">多歌手用「 / 」分隔；FLAC 写入多值，其它格式写展示串</span>
+            <span class="field-hint">多歌手用「 / 」分隔；FLAC 写入多值，其它格式写展示串；DSF/DFF 写内嵌 ID3</span>
           </label>
           <label>
             <span class="field-label-row">专辑艺术家</span>

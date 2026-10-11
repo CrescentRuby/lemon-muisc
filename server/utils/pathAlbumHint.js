@@ -5,7 +5,7 @@ import { splitArtists } from './artistTag.js'
 const SKIP_FOLDER_NAMES = new Set([
   'music', 'musics', 'music library', 'musiclibrary', 'media', 'audio',
   'download', 'downloads', '下载', '音乐', '音乐库', '曲库', '我的音乐',
-  'flac', 'mp3', 'wav', 'ape', 'dsd', 'alac', 'aac', 'ogg', 'm4a',
+  'flac', 'mp3', 'wav', 'ape', 'dsd', 'dsf', 'dff', 'alac', 'aac', 'ogg', 'm4a',
   'lossless', 'lossy', 'hi-res', 'hires', 'cd', 'vinyl',
   'artist', 'artists', 'album', 'albums', '歌手', '专辑',
 ])

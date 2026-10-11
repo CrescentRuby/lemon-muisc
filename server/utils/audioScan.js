@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 
-export const AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma']
+export const AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma', '.dsf', '.dff']
 
 function isAudioName(name) {
   return AUDIO_EXTS.includes(path.extname(name).toLowerCase())

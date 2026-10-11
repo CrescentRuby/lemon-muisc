@@ -151,6 +151,8 @@ let playNextAutoDepth = 0
 const LOCAL_SMOOTH_EXTS = new Set([
   'flac', 'wav', 'aiff', 'aif', 'ape', 'dsf', 'dff', 'wv', 'tak',
 ])
+/** 浏览器无法直出，始终走服务端转码（与「本地转码」开关无关） */
+const LOCAL_FORCE_TRANSCODE_EXTS = new Set(['ape', 'dsf', 'dff'])
 /** 直出失败后可走服务端转码修复（含浏览器 FFmpegDemuxer 不认的 MP3） */
 const LOCAL_REPAIR_EXTS = new Set([
   ...LOCAL_SMOOTH_EXTS,
@@ -2566,9 +2568,12 @@ function fileExtOf(filePath) {
 
 /** 本地曲目展示用音质/格式（优先文件扩展名与元数据） */
 function resolveLocalPlayQualityLabel(item, { smooth = false } = {}) {
-  if (smooth) return 'smooth'
   const filePath = getTrackFilePath(item)
   const ext = fileExtOf(filePath)
+  // 强制转码格式仍显示原封装名（勿被 smooth 盖成「流畅」）
+  if (ext === 'ape') return 'APE'
+  if (ext === 'dsf' || ext === 'dff' || ext === 'dsd') return 'DSD'
+  if (smooth) return 'smooth'
   const bits = Number(item?.bitsPerSample || item?.bitDepth || 0)
   const rate = Number(item?.sampleRate || 0)
   const br = Number(item?.bitrate || 0)
@@ -2576,9 +2581,7 @@ function resolveLocalPlayQualityLabel(item, { smooth = false } = {}) {
     if (bits >= 24 || rate > 48000) return 'flac24bit'
     return 'flac'
   }
-  if (ext === 'ape') return 'APE'
   if (ext === 'wav') return 'WAV'
-  if (ext === 'dsf' || ext === 'dff' || ext === 'dsd') return 'DSD'
   if (ext === 'm4a' || ext === 'aac' || ext === 'alac') {
     if (String(item?.format || '').toLowerCase().includes('alac') || ext === 'alac') return 'ALAC'
     return ext === 'm4a' ? 'M4A' : 'AAC'
@@ -2612,7 +2615,9 @@ function buildLocalStreamUrl(item, { smooth = false } = {}) {
   const ext = fileExtOf(filePath)
   const base = ext === 'ape'
     ? '/api/play/local-ape'
-    : (smooth ? '/api/play/local-smooth' : '/api/play/local')
+    : (smooth || ext === 'dsf' || ext === 'dff'
+      ? '/api/play/local-smooth'
+      : '/api/play/local')
   const tid = localStreamTrackId(item)
   if (tid) return `${base}?trackId=${encodeURIComponent(tid)}`
   if (filePath) return `${base}?path=${encodeURIComponent(filePath)}`
@@ -2622,16 +2627,18 @@ function buildLocalStreamUrl(item, { smooth = false } = {}) {
 async function resolvePlayUrl(item, source, quality = getPlayQuality(), options = {}) {
   if (isLocalTrack(item, source)) {
     // 优先用短 trackId 流地址，避免中文长路径 + token 被网关截断
-    // APE 仍走格式必需的 local-ape；AAC 流畅转码仅在开关打开（或显式 forceSmoothLocal）时启用
+    // APE / DSF / DFF 始终转码；其余 AAC 流畅转码仅在开关打开（或显式 forceSmoothLocal）时启用
     const filePath = getTrackFilePath(item)
     const ext = fileExtOf(filePath)
+    const forceTranscode = LOCAL_FORCE_TRANSCODE_EXTS.has(ext)
     const wantSmooth = Boolean(
       ext
       && !options.forceDirectLocal
       && (
-        options.forceSmoothLocal
+        forceTranscode
+        || (options.forceSmoothLocal
           ? (smoothStreamEnabled.value && LOCAL_REPAIR_EXTS.has(ext))
-          : (LOCAL_SMOOTH_EXTS.has(ext) && smoothStreamEnabled.value)
+          : (LOCAL_SMOOTH_EXTS.has(ext) && smoothStreamEnabled.value))
       ),
     )
     const direct = buildLocalStreamUrl(item, { smooth: wantSmooth })
@@ -2643,7 +2650,9 @@ async function resolvePlayUrl(item, source, quality = getPlayQuality(), options 
     }
     const res = await api.play.getUrl({
       ...buildPlayPayload(item, 'local', quality),
-      ...((!options.forceDirectLocal && (smoothStreamEnabled.value || options.forceSmoothLocal)) ? { smooth: true } : {}),
+      ...((!options.forceDirectLocal && (forceTranscode || smoothStreamEnabled.value || options.forceSmoothLocal))
+        ? { smooth: true }
+        : {}),
     }, { signal: options.signal })
     return res.url || ''
   }
@@ -3270,11 +3279,15 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
     let lastError = null
 
     // —— 本地：开转码才走 AAC；关转码只直出原文件，失败提示后跳下一曲 ——
+    // APE / DSF / DFF 始终转码，不受「本地转码」开关影响
     if (isLocal) {
       const quality = preferredQuality
       let usedSmoothFallback = false
       let usedDecodeSmoothRetry = false
-      const canRepairThisFile = smoothStreamEnabled.value && LOCAL_REPAIR_EXTS.has(fileExtOf(filePath))
+      const localExt = fileExtOf(filePath)
+      const forceFormatTranscode = LOCAL_FORCE_TRANSCODE_EXTS.has(localExt)
+      const canRepairThisFile = (smoothStreamEnabled.value || forceFormatTranscode)
+        && LOCAL_REPAIR_EXTS.has(localExt)
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         if (intent !== playIntentToken) return
         if (attempt > 0 || audioBrokenAtStart) {
@@ -3283,8 +3296,13 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
         }
         try {
           // 开转码：默认转码，转码失败再直出，直出仍失败可再强制转码修复。关转码：始终直出
-          const forceDirectLocal = !smoothStreamEnabled.value || usedSmoothFallback
-          const forceSmoothLocal = Boolean(smoothStreamEnabled.value && usedDecodeSmoothRetry && !usedSmoothFallback)
+          // 强制转码格式（APE/DSD）禁止 forceDirectLocal
+          const forceDirectLocal = !forceFormatTranscode
+            && (!smoothStreamEnabled.value || usedSmoothFallback)
+          const forceSmoothLocal = Boolean(
+            forceFormatTranscode
+            || (smoothStreamEnabled.value && usedDecodeSmoothRetry && !usedSmoothFallback),
+          )
           await tryPlayAtQuality(enrichedItem, source, quality, {
             forceRefresh: attempt > 0 || audioBrokenAtStart,
             forceDirectLocal,
@@ -3325,12 +3343,12 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
           })
           recoverPlaybackPipeline(trackKey, item, source, quality)
           const msg = String(e?.message || '')
-          // 关转码：不偷偷切 AAC，同源直出重试后交给外层跳曲
-          if (!smoothStreamEnabled.value) {
+          // 关转码：不偷偷切 AAC，同源直出重试后交给外层跳曲（强制转码格式除外）
+          if (!smoothStreamEnabled.value && !forceFormatTranscode) {
             if (attempt + 1 >= maxAttempts || !isRetryablePlayError(e)) throw e
             continue
           }
-          if (!usedSmoothFallback && /ffmpeg|转码|流畅/i.test(msg)) {
+          if (!forceFormatTranscode && !usedSmoothFallback && /ffmpeg|转码|流畅/i.test(msg)) {
             usedSmoothFallback = true
             continue
           }

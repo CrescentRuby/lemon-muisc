@@ -705,7 +705,7 @@ libraryRouter.post('/scan-fake-flac', (req, res) => {
   }
 })
 
-const AUDIO_RENAME_EXTS = new Set(['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma'])
+const AUDIO_RENAME_EXTS = new Set(['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma', '.dsf', '.dff'])
 
 function sanitizeAudioFileName(raw, fallbackExt = '.mp3') {
   let name = String(raw || '').trim()

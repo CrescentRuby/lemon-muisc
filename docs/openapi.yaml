@@ -2,8 +2,8 @@
 openapi: 3.1.0
 info:
   title: Lemon Music Open API
-  version: 1.2.17.3
-  description: "柠檬音乐自托管开放 API。路径同时挂载在 `/api` 与 `/api/v1`（推荐客户端使用 `/api/v1`）。\n\n鉴权：`Authorization: Bearer <sessionToken>`；音频流可用 `?ticket=` 短时效媒体票（也可兼容 `?token=` 会话 JWT）。\n\n曲目稳定 ID：库内 `id` / `trackId` 为 UUID；在线曲目请用 `songId`+`source`，勿把平台 id 当作 trackId。\n\n播放换源：同一次 `/play/url` 内可用 `sourceApiId` / `skipSourceIds` 控制音源脚本；跨平台搜曲由客户端自行完成后再调本接口。\n\n本地转码：`smooth=true` 请求 AAC 流；关闭用户设置「本地转码」时客户端应直出 `/play/local`。\n\n稳定性：已公开路径与字段尽量固定；新功能新开路由或可选字段，避免破坏第三方客户端（详见 docs/open-api.md）。\n\n人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。"
+  version: 1.2.17.4
+  description: "柠檬音乐自托管开放 API。路径同时挂载在 `/api` 与 `/api/v1`（推荐客户端使用 `/api/v1`）。\n\n鉴权：`Authorization: Bearer <sessionToken>`；音频流可用 `?ticket=` 短时效媒体票（也可兼容 `?token=` 会话 JWT）。\n\n曲目稳定 ID：库内 `id` / `trackId` 为 UUID；在线曲目请用 `songId`+`source`，勿把平台 id 当作 trackId。\n\n播放换源：同一次 `/play/url` 内可用 `sourceApiId` / `skipSourceIds` 控制音源脚本；跨平台搜曲由客户端自行完成后再调本接口。\n\n本地转码：`smooth=true` 请求 AAC 流；关闭用户设置「本地转码」时客户端应直出 `/play/local`（APE / DSF / DFF 除外，始终转码）。\n\n稳定性：已公开路径与字段尽量固定；新功能新开路由或可选字段，避免破坏第三方客户端（详见 docs/open-api.md）。\n\n人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。"
   license:
     name: MIT
 servers:
@@ -1914,7 +1914,7 @@ paths:
       tags:
         - play
       summary: 解析播放地址
-      description: "本地：传库内 `trackId`（UUID）或 `localPath`/`filePath`。\n在线：传平台 `songId`（或 songmid/hash 等）+ `source`（kw/tx/wy/kg/mg）+ 可选 `quality`。\n\n**重要**：在线曲目的平台 id 不得当作库 `trackId`。仅 UUID 形态（或显式 `trackId`）才走库内查找；否则会 404 `TRACK_NOT_FOUND`。\n\n`smooth=true` 时本地无损可走 AAC 转码流（需服务器 ffmpeg；APE 始终走 `/play/local-ape`）。\n\n多音源：可用 `sourceApiId` 锁定脚本，或 `skipSourceIds` 跳过已失败脚本；失败且设置为询问模式时返回 409 `SOURCE_FALLBACK_REQUIRED`。\n\n成功时 `url` 为带 `?ticket=` 的相对路径，拼上 HOST 即可播放。"
+      description: "本地：传库内 `trackId`（UUID）或 `localPath`/`filePath`。\n在线：传平台 `songId`（或 songmid/hash 等）+ `source`（kw/tx/wy/kg/mg）+ 可选 `quality`。\n\n**重要**：在线曲目的平台 id 不得当作库 `trackId`。仅 UUID 形态（或显式 `trackId`）才走库内查找；否则会 404 `TRACK_NOT_FOUND`。\n\n`smooth=true` 时本地无损可走 AAC 转码流（需服务器 ffmpeg；APE 始终走 `/play/local-ape`；DSF/DFF 始终走 `/play/local-smooth`）。\n\n多音源：可用 `sourceApiId` 锁定脚本，或 `skipSourceIds` 跳过已失败脚本；失败且设置为询问模式时返回 409 `SOURCE_FALLBACK_REQUIRED`。\n\n成功时 `url` 为带 `?ticket=` 的相对路径，拼上 HOST 即可播放。"
       security:
         - bearerAuth: []
       responses:

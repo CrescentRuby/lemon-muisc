@@ -115,7 +115,7 @@ POST /api/v1/play/url
 |------|------|
 | `sourceApiId` | 锁定某个已激活音源脚本 |
 | `skipSourceIds` | 跳过已失败的脚本 |
-| `smooth` | 本地请求 AAC 转码流（需 ffmpeg；对应用户设置「本地转码」） |
+| `smooth` | 本地请求 AAC 转码流（需 ffmpeg；对应用户设置「本地转码」）。APE / DSF / DFF 始终转码，可不传 `smooth` |
 | `refresh` | 跳过播放链缓存 |
 
 多音源失败且设置为「询问」时，可能返回 **409** `SOURCE_FALLBACK_REQUIRED`（含备选脚本列表）。  

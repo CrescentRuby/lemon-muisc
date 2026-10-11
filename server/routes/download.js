@@ -97,7 +97,7 @@ export function getDownloadQueueStats() {
 
 const SAME_QUALITY_ATTEMPTS = 3
 const RETRY_DELAY_MS = 1200
-const DOWNLOAD_ARTIFACT_EXTS = ['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma', '.opus']
+const DOWNLOAD_ARTIFACT_EXTS = ['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma', '.opus', '.dsf', '.dff']
 
 function isAdmin(user) {
   return user?.role === 'admin'

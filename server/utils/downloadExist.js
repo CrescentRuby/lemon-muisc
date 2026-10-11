@@ -5,7 +5,7 @@ import { qualityLabel, qualityRank } from './downloadQuality.js'
 import { resolveDownloadGroupDir } from './downloadPath.js'
 import { getDownloadSavePath } from './filePaths.js'
 
-export const EXIST_AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma', '.opus']
+export const EXIST_AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.ape', '.ogg', '.m4a', '.aac', '.wma', '.opus', '.dsf', '.dff']
 
 /**
  * 同名文件策略：ask=询问 / skip=自动跳过 / overwrite=直接覆盖

@@ -64,7 +64,15 @@ const AUDIO_MIME = {
   '.opus': 'audio/ogg',
   '.wav': 'audio/wav',
   '.ape': 'audio/ape',
+  '.dsf': 'audio/x-dsf',
+  '.dff': 'audio/x-dff',
   '.webm': 'audio/webm',
+}
+
+/** DSD：浏览器无法直出，始终走 AAC 流畅转码 */
+function isDsdExt(ext) {
+  const e = String(ext || '').toLowerCase()
+  return e === '.dsf' || e === '.dff'
 }
 
 function isAllowedRemoteUrl(raw) {
@@ -206,9 +214,10 @@ playRouter.post('/url', async (req, res) => {
         ? path.resolve(mapped)
         : path.resolve(localFilePath)
       const localExt = path.extname(resolvedLocal).toLowerCase()
-      const wantSmooth = Boolean(req.body?.smooth)
+      const forceDsdSmooth = isDsdExt(localExt)
+      const wantSmooth = forceDsdSmooth || (Boolean(req.body?.smooth)
         && canSmoothOrRepairTranscode(resolvedLocal)
-        && localExt !== '.ape'
+        && localExt !== '.ape')
       // 有稳定 trackId 时用短地址，避免中文长路径被网关截断
       const tid = String(libraryTrackId || '').trim()
       const qs = tid && LIBRARY_TRACK_ID_RE.test(tid)
@@ -403,6 +412,12 @@ playRouter.get('/local', (req, res) => {
       logPlayError('local', req, 'APE 需转码后播放', { status: 415, filePath: exists, ext })
       return res.status(415).json({
         error: 'APE 需转码后播放，请使用 /api/play/local-ape 或重新获取播放链接',
+      })
+    }
+    if (isDsdExt(ext)) {
+      logPlayError('local', req, 'DSD 需转码后播放', { status: 415, filePath: exists, ext })
+      return res.status(415).json({
+        error: 'DSD（DSF/DFF）需转码后播放，请使用 /api/play/local-smooth 或重新获取播放链接',
       })
     }
     if (!fs.existsSync(exists)) {

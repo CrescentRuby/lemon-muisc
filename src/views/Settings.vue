@@ -204,7 +204,7 @@
             <header class="paths-zone-head">
               <div>
                 <h4 class="paths-section-title">ffmpeg</h4>
-                <p class="paths-zone-desc">APE 试听 / 情绪分析按需使用。装包不会下载；有系统自带时一般无需操作。</p>
+                <p class="paths-zone-desc">APE / DSD（DSF、DFF）试听与情绪分析按需使用。装包不会下载；有系统自带时一般无需操作。</p>
               </div>
             </header>
             <div class="paths-inner">
@@ -1151,6 +1151,7 @@
             <div class="setting-item-desc">
               开启：本地 FLAC 等先在 NAS 转成约 128kbps AAC 再播，并预热下一首；在线试听也会压到 128k，适合无线 CarPlay / 弱网。
               关闭：始终直出原文件，不自动转码；播不动时会提示网络不佳并建议开转码，连播时自动跳下一曲。
+              APE / DSF / DFF（DSD）浏览器无法直出，始终转码播放，不受本开关影响。
               开启后会关闭音频可视化。需要可用的 ffmpeg。iPhone/iPad 默认开启。
             </div>
           </div>
@@ -1540,7 +1541,7 @@ const ffmpegStatusLabel = computed(() => {
     if (ffmpegStatus.value.source === 'managed') return '可用 · 便携版回退'
     return '可用'
   }
-  return '未就绪（不用 APE / 情绪分析可忽略；要用时再点「检测并准备」）'
+  return '未就绪（不用 APE / DSD / 情绪分析可忽略；要用时再点「检测并准备」）'
 })
 const ffmpegStatusClass = computed(() => {
   if (ffmpegInstall.value.phase === 'error') return 'ffmpeg-bad'

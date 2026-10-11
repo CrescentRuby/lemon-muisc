@@ -6,6 +6,7 @@ import { normalizeLyricText, pickBestLyricText } from './utils/lyric.js'
 import { writeWavMeta } from './utils/wavTag.js'
 import { writeApeMeta } from './utils/apeTag.js'
 import { writeM4aMeta, canWriteM4aExt } from './utils/m4aTag.js'
+import { writeDsfMeta, writeDffMeta } from './utils/dsdTag.js'
 import { joinArtists, normalizeArtistForWrite } from './utils/artistTag.js'
 
 /**
@@ -20,6 +21,10 @@ export async function writeMeta(filePath, ext, meta, options = {}) {
     await writeWavMeta(filePath, meta, { decodePicInput, atomicReplaceFile })
   } else if (ext === '.ape') {
     await writeApeMeta(filePath, meta, { decodePicInput, atomicReplaceFile })
+  } else if (ext === '.dsf') {
+    await writeDsfMeta(filePath, meta, { decodePicInput, atomicReplaceFile })
+  } else if (ext === '.dff') {
+    await writeDffMeta(filePath, meta, { decodePicInput, atomicReplaceFile })
   } else if (canWriteM4aExt(ext)) {
     await writeM4aMeta(filePath, meta, { decodePicInput })
   } else {
