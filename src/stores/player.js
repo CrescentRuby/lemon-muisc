@@ -57,12 +57,31 @@ export const isPaused = ref(false)
 /** 点击播放后、真正开始出声前的缓冲阶段 */
 export const isBuffering = ref(false)
 export const currentTime = ref(0)
-/** 当前试听实际取链平台（kw/tx/...），本地为空 */
+/** 当前试听实际取链平台（kw/tx/.../local） */
 export const currentPlayPlatform = ref('')
+/** 当前试听实际音质档（128k/320k/flac/...）；本地可为格式名如 FLAC/MP3 */
+export const currentPlayQuality = ref('')
 export const currentPlayPlatformLabel = computed(() => {
-  const key = currentPlayPlatform.value
-  if (!key || key === 'local') return ''
+  const key = String(currentPlayPlatform.value || '').trim()
+  if (!key) return ''
+  if (key === 'local') return '本地'
   return platformLabel(key)
+})
+export const currentPlayQualityLabel = computed(() => {
+  const q = String(currentPlayQuality.value || '').trim()
+  if (!q) return ''
+  if (q === 'smooth' || q.endsWith(':smooth')) return '流畅 · AAC'
+  if (QUALITY_ORDER.includes(q) || QUALITY_LABELS[q]) return getQualityLabel(q)
+  const upper = String(q).toUpperCase()
+  if (upper === 'FLAC24BIT') return 'FLAC Hi-Res'
+  return upper
+})
+/** 试听区徽章：平台 · 音质 */
+export const currentPlaySourceMetaLabel = computed(() => {
+  const plat = currentPlayPlatformLabel.value
+  const qual = currentPlayQualityLabel.value
+  if (plat && qual) return `${plat} · ${qual}`
+  return plat || qual || ''
 })
 export const duration = ref(0)
 export const volume = ref(0.8)
@@ -121,11 +140,13 @@ export const visualizerEnabled = ref(true)
 /** 关闭频谱时自动启用后台播放（与 visualizerEnabled 互斥） */
 export const backgroundPlayEnabled = computed(() => !visualizerEnabled.value)
 /**
- * 车机 / 弱网流畅播放：本地 FLAC 等先转 AAC 再播。
- * 无线 CarPlay 与 NAS 抢 WiFi 时直出无损易一卡一卡；关可视化也无效。
+ * 本地流畅转码：开启后本地 FLAC 等才转 AAC 再播（弱网/车机更稳）。
+ * 关闭时一律直出原文件；播不动只提示并可跳下一曲，不会偷偷转码。
  */
 export const smoothStreamEnabled = ref(false)
 export const PLAYER_SMOOTH_STREAM_KEY = 'player.smoothStream'
+/** >0 表示正处于自动连播跳曲，避免失败时再嵌套 playNextAuto */
+let playNextAutoDepth = 0
 
 const LOCAL_SMOOTH_EXTS = new Set([
   'flac', 'wav', 'aiff', 'aif', 'ape', 'dsf', 'dff', 'wv', 'tak',
@@ -1053,9 +1074,8 @@ export function normalizePlayQuality(raw) {
 
 export function getPlayQuality() {
   const q = normalizePlayQuality(playQuality.value)
-  // 流畅模式 / 手机流量：压到 128k，降低取链失败与卡顿
-  const capCellular = !smoothStreamEnabled.value && isConstrainedNetwork()
-  if (smoothStreamEnabled.value || capCellular) {
+  // 仅开启本地转码时，在线试听也压到 128k，减轻弱网卡顿
+  if (smoothStreamEnabled.value) {
     const idx = QUALITY_ORDER.indexOf(q)
     const capIdx = QUALITY_ORDER.indexOf('128k')
     if (idx >= 0 && capIdx >= 0 && idx < capIdx) return '128k'
@@ -1832,23 +1852,94 @@ async function findCrossPlatformMatch(item, platform) {
   }
 }
 
-async function listPlayablePlatforms(exclude = '') {
+async function fetchActiveSourceState() {
   try {
-    const res = await api.search.sources()
-    const map = res?.sources || res?.data || res || {}
-    const keys = Object.keys(map).filter((k) => PLATFORM_LABELS[k] || map[k])
-    return keys.filter((k) => k && k !== exclude && k !== 'local')
+    const res = await api.source.active()
+    return {
+      ids: Array.isArray(res?.ids) ? res.ids.map(String).filter(Boolean) : [],
+      list: Array.isArray(res?.list) ? res.list : [],
+    }
   } catch {
-    return Object.keys(PLATFORM_LABELS).filter((k) => k !== exclude)
+    return { ids: [], list: [] }
   }
 }
 
-async function playUrlAndVerifyFull(item, source, { skipSourceIds = [], intent, quality } = {}) {
+/** 激活音源顺序：优先当前/指定源，再按用户激活列表 */
+function orderActiveSourceIds(ids, preferId = '') {
+  const ordered = [...new Set((ids || []).map(String).filter(Boolean))]
+  const prefer = String(preferId || '').trim()
+  if (prefer && ordered.includes(prefer)) {
+    return [prefer, ...ordered.filter((id) => id !== prefer)]
+  }
+  return ordered
+}
+
+/**
+ * 选定「当前源」：指定/上次成功 > 声明了该平台的首个激活源 > 激活列表首项
+ */
+function pickPreferredSourceId(activeState, platform = '', explicitPrefer = '') {
+  const ids = Array.isArray(activeState?.ids) ? activeState.ids.map(String).filter(Boolean) : []
+  if (!ids.length) return ''
+  const explicit = String(explicitPrefer || '').trim()
+  if (explicit && ids.includes(explicit)) return explicit
+  const plat = String(platform || '').trim()
+  if (plat && plat !== 'local') {
+    const hit = ids.find((id) => {
+      const entry = (activeState?.list || []).find((s) => String(s?.id) === id)
+      const sources = entry?.sources || {}
+      return Object.prototype.hasOwnProperty.call(sources, plat)
+    })
+    if (hit) return hit
+  }
+  return ids[0] || ''
+}
+
+/**
+ * 某音源应尝试的平台列表：当前曲目平台优先，再其余声明平台。
+ * onlyCurrent=true 时只试当前平台（关闭跨平台补源）。
+ */
+function platformsForActiveSource(activeState, sourceId, {
+  currentPlatform = '',
+  onlyCurrent = false,
+} = {}) {
+  const cur = String(currentPlatform || '').trim()
+  if (onlyCurrent) return cur && cur !== 'local' ? [cur] : []
+
+  const entry = (activeState?.list || []).find((s) => String(s?.id) === String(sourceId))
+  const declared = Object.keys(entry?.sources || {}).filter((k) => k && k !== 'local')
+  const base = declared.length
+    ? declared
+    : Object.keys(PLATFORM_LABELS).filter((k) => k && k !== 'local')
+  const rest = base.filter((k) => k !== cur)
+  if (cur && cur !== 'local') {
+    // 当前平台即使未出现在声明里也先试（脚本声明可能不完整）
+    return [cur, ...rest]
+  }
+  return rest
+}
+
+function buildPlayQualityLadder(preferred = getPlayQuality()) {
+  const pref = normalizePlayQuality(preferred)
+  const prefIdx = QUALITY_ORDER.indexOf(pref)
+  const lowers = prefIdx >= 0
+    ? QUALITY_ORDER.slice(prefIdx + 1)
+    : ['320k', '128k'].filter((q) => q !== pref)
+  return [pref, ...lowers]
+}
+
+async function playUrlAndVerifyFull(item, source, {
+  skipSourceIds = [],
+  sourceApiId = '',
+  intent,
+  quality,
+} = {}) {
   const q = quality || resolveTrackPlayQuality(item)
   clearCachedPlayUrl(item, source, q)
   const url = await resolvePlayUrl(item, source, q, {
     skipSourceIds,
+    sourceApiId: sourceApiId || undefined,
     intent,
+    refresh: Boolean(sourceApiId || skipSourceIds?.length),
   })
   if (!url) return { ok: false }
   if (intent != null && intent !== playIntentToken) return { ok: false, aborted: true }
@@ -1856,7 +1947,7 @@ async function playUrlAndVerifyFull(item, source, { skipSourceIds = [], intent, 
   const actual = await waitForAudioDuration()
   const expected = parseClipDuration(item.interval || item.duration)
   const preview = detectPreviewClip(actual, expected)
-  const sourceId = currentPlaySourceApiId
+  const sourceId = currentPlaySourceApiId || sourceApiId || ''
   const platform = item.source || source || ''
   if (sourceId) {
     api.source.reportHealth(sourceId, Boolean(preview), platform).catch(() => {})
@@ -1866,79 +1957,98 @@ async function playUrlAndVerifyFull(item, source, { skipSourceIds = [], intent, 
     return { ok: false, preview, sourceId, platform }
   }
   setCachedPlayUrl(item, source, q, url)
-  currentPlayPlatform.value = String(platform || source || '')
+  setCurrentPlayMeta({ platform: platform || source || '', quality: q })
   return { ok: true, platform, sourceId, quality: q }
 }
 
+function applyOnlineQueueSwitch(match, plat) {
+  const cleaned = cleanTrackItem({ ...match, source: plat })
+  const key = getTrackKey(cleaned, plat)
+  const qi = currentQueueIndex.value
+  if (qi >= 0 && playQueue.value[qi]) {
+    playQueue.value[qi] = { key, item: cleaned, source: plat }
+  }
+  currentPlaying.value = cleaned
+  currentPlayPlatform.value = plat
+  return { cleaned, key }
+}
+
+/**
+ * 试听片段自动切换：保持试听音质优先；
+ * 当前源先穷尽各平台 → 再换其它激活源穷尽各平台 → 再降档。
+ */
 async function autoSwitchFromPreview(item, source, failedSourceId) {
   const token = ++previewSwitchToken
   const intent = playIntentToken
   const preferred = getPlayQuality()
-  const skip = new Set([failedSourceId].filter(Boolean))
-  showPlayerNotice('检测到试听时长，正在自动切换音源/平台…', 10000)
+  const qualityLadder = buildPlayQualityLadder(preferred)
+  showPlayerNotice('检测到试听时长，正在按音源切换平台查找…', 10000)
 
-  // 1) 同平台换其它音源脚本（保持试听音质偏好）
-  try {
-    const same = await playUrlAndVerifyFull(item, source, {
-      skipSourceIds: [...skip],
-      intent,
-      quality: preferred,
-    })
-    if (token !== previewSwitchToken || intent !== playIntentToken) return false
-    if (same.aborted) return false
-    if (same.ok) {
-      currentPlayPlatform.value = same.platform || source
-      showPlayerNotice(`已切换音源，完整播放（${platformLabel(same.platform || source)}）`, 5000)
-      previewWarnedTrackKey = getTrackKey(item, source)
-      return true
-    }
-    if (same.sourceId) skip.add(same.sourceId)
-  } catch {
-    // continue to cross-platform
-  }
+  const activeState = await fetchActiveSourceState()
+  let sourceOrder = orderActiveSourceIds(activeState.ids, failedSourceId || currentPlaySourceApiId)
+  if (!sourceOrder.length && failedSourceId) sourceOrder = [failedSourceId]
+  if (!sourceOrder.length) sourceOrder = [null]
 
-  // 2) 其它平台搜同名曲，先同音质再降档
-  if (!crossPlatformSupplement.value) {
-    if (token === previewSwitchToken) {
-      showPlayerNotice('当前音源多为试听，请开启跨平台补源或更换音源', 8000)
-    }
-    return false
-  }
-  const platforms = await listPlayablePlatforms(source)
-  const qualityLadder = [preferred, ...QUALITY_ORDER.filter((q) => q !== preferred && QUALITY_ORDER.indexOf(q) > QUALITY_ORDER.indexOf(preferred))]
-  for (const plat of platforms) {
-    if (token !== previewSwitchToken || intent !== playIntentToken) return false
-    const match = await findCrossPlatformMatch(item, plat)
-    if (!match) continue
-    for (const q of qualityLadder) {
+  for (const q of qualityLadder) {
+    for (let si = 0; si < sourceOrder.length; si++) {
+      const sid = sourceOrder[si]
       if (token !== previewSwitchToken || intent !== playIntentToken) return false
-      try {
-        const result = await playUrlAndVerifyFull(match, plat, { intent, quality: q })
-        if (token !== previewSwitchToken || intent !== playIntentToken) return false
-        if (result.aborted) return false
-        if (!result.ok) continue
 
-        const cleaned = cleanTrackItem({ ...match, source: plat })
-        const key = getTrackKey(cleaned, plat)
-        const qi = currentQueueIndex.value
-        if (qi >= 0 && playQueue.value[qi]) {
-          playQueue.value[qi] = { key, item: cleaned, source: plat }
+      const platforms = platformsForActiveSource(activeState, sid, {
+        currentPlatform: source,
+        onlyCurrent: !crossPlatformSupplement.value,
+      })
+      const platformsToTry = platforms.length ? platforms : [source].filter(Boolean)
+
+      for (const plat of platformsToTry) {
+        if (token !== previewSwitchToken || intent !== playIntentToken) return false
+        // 已确认试听的组合跳过
+        if (sid && sid === failedSourceId && plat === source && q === preferred) continue
+
+        let playItem = item
+        let playSource = source
+        if (plat !== source) {
+          const match = await findCrossPlatformMatch(item, plat)
+          if (!match) continue
+          playItem = match
+          playSource = plat
         }
-        currentPlaying.value = cleaned
-        currentPlayPlatform.value = plat
-        previewWarnedTrackKey = key
-        showPlayerNotice(`已切换至 ${platformLabel(plat)}，完整播放`, 6000)
-        ensureLyricsForTrack(cleaned, plat, key)
-        saveQueueState()
-        return true
-      } catch {
-        // try next quality / platform
+
+        try {
+          const result = await playUrlAndVerifyFull(playItem, playSource, {
+            intent,
+            quality: q,
+            sourceApiId: sid || undefined,
+          })
+          if (token !== previewSwitchToken || intent !== playIntentToken) return false
+          if (result.aborted) return false
+          if (!result.ok) continue
+
+          if (playSource !== source) {
+            const { cleaned, key } = applyOnlineQueueSwitch(playItem, playSource)
+            previewWarnedTrackKey = key
+            ensureLyricsForTrack(cleaned, playSource, key)
+            saveQueueState()
+            showPlayerNotice(`已切换至 ${platformLabel(playSource)}，完整播放（${playQualityLabel(q)}）`, 6000)
+          } else {
+            setCurrentPlayMeta({ platform: playSource, quality: q })
+            previewWarnedTrackKey = getTrackKey(item, source)
+            showPlayerNotice(`已切换音源，完整播放（${platformLabel(playSource)} · ${playQualityLabel(q)}）`, 5000)
+          }
+          return true
+        } catch {
+          // try next platform / source / quality
+        }
+      }
+
+      if (si === 0 && q === preferred && crossPlatformSupplement.value) {
+        showPlayerNotice('当前音源各平台不可用，正在切换其它音源…', 6000)
       }
     }
   }
 
   if (token === previewSwitchToken) {
-    showPlayerNotice('各平台多为试听或无法完整播放，请更换/激活其它音源', 8000)
+    showPlayerNotice('各音源/平台多为试听或无法完整播放，请更换或激活其它音源', 8000)
   }
   return false
 }
@@ -2183,7 +2293,15 @@ function scheduleMediaErrorAutoSkip(reason = '') {
       return
     }
     mediaErrorAutoSkipInFlight = true
-    showPlayerNotice('网络中断，已跳过当前曲目', 4000)
+    const localNoSmooth = isCurrentPlayLocal() && !smoothStreamEnabled.value
+    showPlayerNotice(
+      localNoSmooth
+        ? (isConstrainedNetwork()
+          ? '网络不佳，原文件播放中断。可开启「本地转码」，已跳过本曲'
+          : '本地原文件播放中断。可开启「本地转码」，已跳过本曲')
+        : '网络中断，已跳过当前曲目',
+      5500,
+    )
     logPlayerIssue('warn', reason || 'media error auto-skip', { event: 'audio.error.autoskip' })
     Promise.resolve()
       .then(() => playNextAuto())
@@ -2446,6 +2564,49 @@ function fileExtOf(filePath) {
   return i >= 0 ? base.slice(i + 1).toLowerCase() : ''
 }
 
+/** 本地曲目展示用音质/格式（优先文件扩展名与元数据） */
+function resolveLocalPlayQualityLabel(item, { smooth = false } = {}) {
+  if (smooth) return 'smooth'
+  const filePath = getTrackFilePath(item)
+  const ext = fileExtOf(filePath)
+  const bits = Number(item?.bitsPerSample || item?.bitDepth || 0)
+  const rate = Number(item?.sampleRate || 0)
+  const br = Number(item?.bitrate || 0)
+  if (ext === 'flac' || String(item?.format || '').toLowerCase().includes('flac')) {
+    if (bits >= 24 || rate > 48000) return 'flac24bit'
+    return 'flac'
+  }
+  if (ext === 'ape') return 'APE'
+  if (ext === 'wav') return 'WAV'
+  if (ext === 'dsf' || ext === 'dff' || ext === 'dsd') return 'DSD'
+  if (ext === 'm4a' || ext === 'aac' || ext === 'alac') {
+    if (String(item?.format || '').toLowerCase().includes('alac') || ext === 'alac') return 'ALAC'
+    return ext === 'm4a' ? 'M4A' : 'AAC'
+  }
+  if (ext === 'ogg' || ext === 'oga') return 'OGG'
+  if (ext === 'mp3' || ext === 'mpeg') {
+    if (br >= 300) return '320k'
+    if (br >= 160) return '192k'
+    if (br > 0) return '128k'
+    return 'MP3'
+  }
+  const fmt = String(item?.format || '').trim()
+  if (fmt) return fmt
+  if (ext) return ext.toUpperCase()
+  return '本地'
+}
+
+function setCurrentPlayMeta({ platform = '', quality = '', isLocal = false } = {}) {
+  if (isLocal || platform === 'local') {
+    currentPlayPlatform.value = 'local'
+  } else if (platform) {
+    currentPlayPlatform.value = String(platform)
+  }
+  if (quality != null && quality !== '') {
+    currentPlayQuality.value = String(quality)
+  }
+}
+
 function buildLocalStreamUrl(item, { smooth = false } = {}) {
   const filePath = getTrackFilePath(item)
   const ext = fileExtOf(filePath)
@@ -2461,17 +2622,16 @@ function buildLocalStreamUrl(item, { smooth = false } = {}) {
 async function resolvePlayUrl(item, source, quality = getPlayQuality(), options = {}) {
   if (isLocalTrack(item, source)) {
     // 优先用短 trackId 流地址，避免中文长路径 + token 被网关截断
-    // APE 需服务端转码；流畅模式：高码率无损走 AAC 缓存流（车机/弱网）
+    // APE 仍走格式必需的 local-ape；AAC 流畅转码仅在开关打开（或显式 forceSmoothLocal）时启用
     const filePath = getTrackFilePath(item)
     const ext = fileExtOf(filePath)
-    // 流量/弱网下本地无损默认转 AAC，避免手机拉整轨 FLAC 卡死
     const wantSmooth = Boolean(
       ext
       && !options.forceDirectLocal
       && (
         options.forceSmoothLocal
-          ? LOCAL_REPAIR_EXTS.has(ext)
-          : (LOCAL_SMOOTH_EXTS.has(ext) && (smoothStreamEnabled.value || isConstrainedNetwork()))
+          ? (smoothStreamEnabled.value && LOCAL_REPAIR_EXTS.has(ext))
+          : (LOCAL_SMOOTH_EXTS.has(ext) && smoothStreamEnabled.value)
       ),
     )
     const direct = buildLocalStreamUrl(item, { smooth: wantSmooth })
@@ -2483,7 +2643,7 @@ async function resolvePlayUrl(item, source, quality = getPlayQuality(), options 
     }
     const res = await api.play.getUrl({
       ...buildPlayPayload(item, 'local', quality),
-      ...((!options.forceDirectLocal && (smoothStreamEnabled.value || options.forceSmoothLocal || isConstrainedNetwork())) ? { smooth: true } : {}),
+      ...((!options.forceDirectLocal && (smoothStreamEnabled.value || options.forceSmoothLocal)) ? { smooth: true } : {}),
     }, { signal: options.signal })
     return res.url || ''
   }
@@ -2605,6 +2765,18 @@ async function startPlaybackFromUrl(url, { resumeTime = 0, item, source, isLocal
   isPaused.value = false
   applyAudioOutput()
   rememberLoadedPlayUrl(item, source, url, quality)
+  {
+    const local = Boolean(isLocal || isLocalTrack(item, source))
+    const smooth = local && /\/api\/play\/local-smooth(?:\?|$)/.test(String(url || ''))
+    const qLabel = local
+      ? resolveLocalPlayQualityLabel(item, { smooth })
+      : String(quality || '').replace(/:smooth$/, '')
+    setCurrentPlayMeta({
+      platform: local ? 'local' : (source || item?.source || ''),
+      quality: qLabel,
+      isLocal: local,
+    })
+  }
   updateActiveLyric(audio?.currentTime || currentTime.value || 0)
 
   // 真正出声前进度前进前保持「缓冲中」；本地先走原生输出，出声后再挂频谱，避免 MediaElementSource 卡死
@@ -2997,36 +3169,49 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
   playerError.value = ''
   clearPlayerNotice()
   previewWarnedTrackKey = ''
+  // 清空前保留上次成功音源，供「当前源优先」排序（否则首轮永远落到激活列表第一项）
+  const previousPlaySourceApiId = currentPlaySourceApiId
   currentPlaySourceApiId = ''
   previewSwitchToken++
   previewSwitchInFlight = false
   const isLocal = isLocalTrack(item, source)
-  currentPlayPlatform.value = isLocal ? '' : String(source || item.source || '')
+  currentPlayPlatform.value = isLocal ? 'local' : String(source || item.source || '')
+  currentPlayQuality.value = isLocal
+    ? resolveLocalPlayQualityLabel(enrichedItem || item)
+    : String(getPlayQuality() || '')
   const preferredQuality = getPlayQuality()
-  // 在线：先坚持偏好音质（同平台 → 跨平台），再降档；本地文件不走音质档
-  const qualityLadder = isLocal
-    ? [preferredQuality]
-    : (() => {
-      const pref = preferredQuality
-      const prefIdx = QUALITY_ORDER.indexOf(pref)
-      const lowers = prefIdx >= 0 ? QUALITY_ORDER.slice(prefIdx + 1) : ['320k', '128k'].filter((q) => q !== pref)
-      return [pref, ...lowers]
-    })()
+  // 在线：试听音质优先；本地文件不走音质档
+  const qualityLadder = isLocal ? [preferredQuality] : buildPlayQualityLadder(preferredQuality)
   // 在线链容易过期；本地流经 Vite 代理偶发 ECONNRESET。失败后清缓存 + 重建 Audio 再试
   const maxAttempts = isLocal ? 3 : 2
   const audioBrokenAtStart = Boolean(audio?.error)
 
-  async function tryPlayAtQuality(playItem, playSource, quality, { forceRefresh = false, forceDirectLocal = false, forceSmoothLocal = false } = {}) {
+  async function tryPlayAtQuality(playItem, playSource, quality, {
+    forceRefresh = false,
+    forceDirectLocal = false,
+    forceSmoothLocal = false,
+    sourceApiId = '',
+    skipSourceIds = [],
+  } = {}) {
     const playKey = getTrackKey(playItem, playSource)
-    const cacheQuality = (isLocalTrack(playItem, playSource) && !forceDirectLocal && (smoothStreamEnabled.value || forceSmoothLocal || isConstrainedNetwork()))
+    const cacheQuality = (isLocalTrack(playItem, playSource) && !forceDirectLocal && (smoothStreamEnabled.value || forceSmoothLocal))
       ? `${quality}:smooth`
       : quality
-    const cachedUrl = forceRefresh ? '' : getCachedPlayUrl(playItem, playSource, cacheQuality)
+    const bypassCache = forceRefresh || Boolean(sourceApiId) || Boolean(skipSourceIds?.length)
+    const cachedUrl = bypassCache ? '' : getCachedPlayUrl(playItem, playSource, cacheQuality)
     const cachedMedia = cachedUrl ? takeMediaAudioCache(playKey, cachedUrl) : null
     if (cachedMedia) {
       await activateCachedAudio(cachedMedia, { resumeTime })
       rememberLoadedPlayUrl(playItem, playSource, cachedUrl, cacheQuality)
-    } else if (!forceRefresh && canReuseLoadedAudio(cachedUrl, playItem, playSource)) {
+      const local = isLocalTrack(playItem, playSource)
+      setCurrentPlayMeta({
+        platform: local ? 'local' : playSource,
+        quality: local
+          ? resolveLocalPlayQualityLabel(playItem, { smooth: String(cacheQuality).includes('smooth') })
+          : quality,
+        isLocal: local,
+      })
+    } else if (!bypassCache && canReuseLoadedAudio(cachedUrl, playItem, playSource)) {
       await startPlaybackFromUrl(cachedUrl, {
         resumeTime,
         item: playItem,
@@ -3038,9 +3223,11 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
       const url = cachedUrl || await resolvePlayUrl(playItem, playSource, quality, {
         signal: playUrlController.signal,
         intent,
-        refresh: forceRefresh,
+        refresh: bypassCache,
         forceDirectLocal,
         forceSmoothLocal,
+        sourceApiId: sourceApiId || undefined,
+        skipSourceIds,
       })
       if (!url) throw new Error('获取播放链接失败')
       await startPlaybackFromUrl(url, {
@@ -3082,12 +3269,12 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
   try {
     let lastError = null
 
-    // —— 本地：沿用原重试 ——
+    // —— 本地：开转码才走 AAC；关转码只直出原文件，失败提示后跳下一曲 ——
     if (isLocal) {
       const quality = preferredQuality
       let usedSmoothFallback = false
       let usedDecodeSmoothRetry = false
-      const canRepairThisFile = LOCAL_REPAIR_EXTS.has(fileExtOf(filePath))
+      const canRepairThisFile = smoothStreamEnabled.value && LOCAL_REPAIR_EXTS.has(fileExtOf(filePath))
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         if (intent !== playIntentToken) return
         if (attempt > 0 || audioBrokenAtStart) {
@@ -3095,8 +3282,9 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
           if (attempt > 0) await new Promise((r) => setTimeout(r, 250 * attempt))
         }
         try {
-          const forceDirectLocal = usedSmoothFallback || (attempt > 0 && smoothStreamEnabled.value && !usedDecodeSmoothRetry)
-          const forceSmoothLocal = usedDecodeSmoothRetry
+          // 开转码：默认转码，转码失败再直出，直出仍失败可再强制转码修复。关转码：始终直出
+          const forceDirectLocal = !smoothStreamEnabled.value || usedSmoothFallback
+          const forceSmoothLocal = Boolean(smoothStreamEnabled.value && usedDecodeSmoothRetry && !usedSmoothFallback)
           await tryPlayAtQuality(enrichedItem, source, quality, {
             forceRefresh: attempt > 0 || audioBrokenAtStart,
             forceDirectLocal,
@@ -3137,7 +3325,12 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
           })
           recoverPlaybackPipeline(trackKey, item, source, quality)
           const msg = String(e?.message || '')
-          if (smoothStreamEnabled.value && !usedSmoothFallback && /ffmpeg|转码|流畅/i.test(msg)) {
+          // 关转码：不偷偷切 AAC，同源直出重试后交给外层跳曲
+          if (!smoothStreamEnabled.value) {
+            if (attempt + 1 >= maxAttempts || !isRetryablePlayError(e)) throw e
+            continue
+          }
+          if (!usedSmoothFallback && /ffmpeg|转码|流畅/i.test(msg)) {
             usedSmoothFallback = true
             continue
           }
@@ -3156,59 +3349,87 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
       return
     }
 
-    // —— 在线：同音质跨平台补源，再降档 ——
+    // —— 在线：试听音质 → 当前源各平台 → 其它激活源各平台 → 再降档 ——
+    const activeState = await fetchActiveSourceState()
+    const preferSourceId = pickPreferredSourceId(activeState, source, previousPlaySourceApiId)
+    const sourceOrder = orderActiveSourceIds(activeState.ids, preferSourceId)
+    const pluginPasses = sourceOrder.length ? sourceOrder : [null]
+
     for (let qi = 0; qi < qualityLadder.length; qi++) {
       const quality = qualityLadder[qi]
       if (intent !== playIntentToken) return
 
-      // 1) 当前平台
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      for (let si = 0; si < pluginPasses.length; si++) {
+        const sourceApiId = pluginPasses[si]
         if (intent !== playIntentToken) return
-        if (attempt > 0 || (qi === 0 && audioBrokenAtStart)) {
-          recoverPlaybackPipeline(trackKey, enrichedItem, source, quality)
-        }
-        try {
-          await tryPlayAtQuality(enrichedItem, source, quality, {
-            forceRefresh: attempt > 0 || (qi === 0 && audioBrokenAtStart),
-          })
-          if (await finishOnlinePlay(enrichedItem, source)) return
-          return
-        } catch (e) {
-          if (e.aborted || intent !== playIntentToken) throw e
-          lastError = e
-          recoverPlaybackPipeline(trackKey, enrichedItem, source, quality)
-          if (attempt + 1 >= maxAttempts || !isRetryablePlayError(e)) break
-        }
-      }
 
-      // 2) 同音质跨平台（降档前）
-      if (crossPlatformSupplement.value) {
-        if (qi === 0) showPlayerNotice('当前平台无此音质，正在跨平台补源…', 8000)
-        else showPlayerNotice(`正在以 ${playQualityLabel(quality)} 跨平台补源…`, 6000)
+        if (qi === 0 && si > 0) {
+          showPlayerNotice('当前音源各平台不可用，正在切换其它音源…', 6000)
+        } else if (qi > 0 && si === 0) {
+          showPlayerNotice(`正在以 ${playQualityLabel(quality)} 继续查找…`, 6000)
+        }
 
-        const platforms = await listPlayablePlatforms(source)
-        for (const plat of platforms) {
+        const platforms = platformsForActiveSource(activeState, sourceApiId, {
+          currentPlatform: source,
+          onlyCurrent: !crossPlatformSupplement.value,
+        })
+        const platformsToTry = platforms.length ? platforms : [source].filter(Boolean)
+
+        for (let pi = 0; pi < platformsToTry.length; pi++) {
+          const plat = platformsToTry[pi]
           if (intent !== playIntentToken) return
-          const match = await findCrossPlatformMatch(enrichedItem, plat)
-          if (!match) continue
-          try {
-            await tryPlayAtQuality(match, plat, quality, { forceRefresh: true })
-            const cleaned = cleanTrackItem({ ...match, source: plat })
-            const key = getTrackKey(cleaned, plat)
-            const qIdx = currentQueueIndex.value
-            if (qIdx >= 0 && playQueue.value[qIdx]) {
-              playQueue.value[qIdx] = { key, item: cleaned, source: plat }
+
+          let playItem = enrichedItem
+          let playSource = source
+          if (plat !== source) {
+            if (qi === 0 && si === 0 && pi === 1) {
+              showPlayerNotice('当前平台无此音质，正在同源跨平台查找…', 8000)
             }
-            currentPlayPlatform.value = plat
-            if (await finishOnlinePlay(cleaned, plat)) {
-              showPlayerNotice(`已切换至 ${platformLabel(plat)}（${playQualityLabel(quality)}）`, 5000)
+            const match = await findCrossPlatformMatch(enrichedItem, plat)
+            if (!match) continue
+            playItem = match
+            playSource = plat
+          }
+
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            if (intent !== playIntentToken) return
+            if (attempt > 0 || (qi === 0 && si === 0 && pi === 0 && audioBrokenAtStart)) {
+              recoverPlaybackPipeline(
+                getTrackKey(playItem, playSource),
+                playItem,
+                playSource,
+                quality,
+              )
+            }
+            try {
+              await tryPlayAtQuality(playItem, playSource, quality, {
+                forceRefresh: attempt > 0
+                  || playSource !== source
+                  || Boolean(sourceApiId)
+                  || (qi === 0 && si === 0 && pi === 0 && audioBrokenAtStart),
+                sourceApiId: sourceApiId || undefined,
+              })
+              if (playSource !== source) {
+                const { cleaned } = applyOnlineQueueSwitch(playItem, playSource)
+                if (await finishOnlinePlay(cleaned, playSource)) {
+                  showPlayerNotice(`已切换至 ${platformLabel(playSource)}（${playQualityLabel(quality)}）`, 5000)
+                  return
+                }
+                return
+              }
+              if (await finishOnlinePlay(playItem, playSource)) return
               return
+            } catch (e) {
+              if (e.aborted || intent !== playIntentToken) throw e
+              lastError = e
+              recoverPlaybackPipeline(
+                getTrackKey(playItem, playSource),
+                playItem,
+                playSource,
+                quality,
+              )
+              if (attempt + 1 >= maxAttempts || !isRetryablePlayError(e)) break
             }
-            return
-          } catch (e) {
-            if (e.aborted || intent !== playIntentToken) throw e
-            lastError = e
-            recoverPlaybackPipeline(getTrackKey(match, plat), match, plat, quality)
           }
         }
       }
@@ -3233,13 +3454,36 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
         logPlayerIssue('warn', message || '本地文件不存在', { item, source, stage: 'playTrackAt.missing' })
         throw new Error(message || '本地文件不存在')
       }
+      // 关转码时本地直出失败：提示开转码，并自动试下一曲
+      if (isLocal && !smoothStreamEnabled.value && playQueue.value.length > 1 && playNextAutoDepth === 0) {
+        playerError.value = ''
+        const tip = isConstrainedNetwork()
+          ? '当前网络不佳，原文件直出失败。可在设置开启「本地转码」后再播，已跳过本曲'
+          : '本地原文件暂时无法播放。可在设置开启「本地转码」后再试，已跳过本曲'
+        showPlayerNotice(tip, 6500)
+        logPlayerIssue('warn', message || tip, { item, source, stage: 'playTrackAt.local-direct-skip' })
+        playNextAutoDepth += 1
+        try {
+          await playNextAuto()
+        } finally {
+          playNextAutoDepth = Math.max(0, playNextAutoDepth - 1)
+        }
+        return
+      }
       isPaused.value = true
       playerError.value = message
+      if (isLocal && !smoothStreamEnabled.value && message) {
+        const hint = isConstrainedNetwork()
+          ? '网络不佳，原文件直出失败。请在设置中开启「本地转码」后重试'
+          : '本地原文件暂时无法播放。可在设置中开启「本地转码」后重试'
+        playerError.value = hint
+        showPlayerNotice(hint, 6500)
+      }
       if (message) {
         logPlayerIssue('error', message, { item, source, err: e?.message || e, stage: 'playTrackAt' })
       }
-      if (!message) return
-      throw new Error(message)
+      if (!message && !(isLocal && !smoothStreamEnabled.value)) return
+      throw new Error(message || playerError.value || '播放失败')
     }
   } finally {
     if (intent === playIntentToken) loadingPlay.value = null
@@ -3270,7 +3514,11 @@ function getAudioElementError(el = audio) {
     if (code === 1) return '本地音频加载被中止，请再点一次播放'
     if (code === 2) return '本地文件加载失败，请检查文件是否还在音乐库目录内'
     if (code === 3) return '本地音频解码失败，文件可能已损坏'
-    if (code === 4) return '本地文件暂时无法播放，请再点一次，或在设置中开启流畅转码'
+    if (code === 4) {
+      return smoothStreamEnabled.value
+        ? '本地文件暂时无法播放，请再点一次'
+        : '本地文件暂时无法播放。网络不佳时可在设置开启「本地转码」'
+    }
   }
   if (code && AUDIO_ELEMENT_ERROR_TEXT[code]) return AUDIO_ELEMENT_ERROR_TEXT[code]
   return ''
@@ -3550,6 +3798,7 @@ export function stopPlay() {
   currentTime.value = 0
   duration.value = 0
   currentPlayPlatform.value = ''
+  currentPlayQuality.value = ''
   setCoverUrl('')
   resetLyricState()
   playerError.value = ''

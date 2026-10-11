@@ -63,7 +63,7 @@
               <div class="fs-title">{{ cleanText(currentPlaying?.name) || '未知歌曲' }}</div>
               <div class="fs-artist">
                 {{ formatArtists(currentPlaying?.singer) || '未知艺术家' }}
-                <em v-if="currentPlayPlatformLabel" class="fs-platform">{{ currentPlayPlatformLabel }}</em>
+                <em v-if="currentPlaySourceMetaLabel" class="fs-platform">{{ currentPlaySourceMetaLabel }}</em>
               </div>
               <div v-if="playerError" class="fs-error">{{ playerError }}</div>
             </div>
@@ -462,7 +462,7 @@ import {
   lyricDisplayMode, effectiveLyricDisplayMode, setLyricDisplayMode, refreshLyricsPreferWords,
   playQueue, currentQueueIndex, playMode, playModeLabel,
   showFullscreenPlayer, visualizerEnabled, volume, isMuted, playerError,
-  currentPlayPlatformLabel,
+  currentPlaySourceMetaLabel,
   togglePause, seekTo, previewSeek, commitSeek, setVolume, toggleMute, fmtTime, playNext, playPrev, togglePlayMode,
   closeFullscreenPlayer, showQueuePanel, playTrackAt, removeFromQueue, clearQueue,
   resumeOrTogglePause, unlockAudioFromGesture, currentLocalTrackPath, tryFillCoverFromNetwork,

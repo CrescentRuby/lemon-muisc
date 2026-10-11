@@ -28,6 +28,8 @@ import {
 import {
   findNextCrossPlatformMatch,
   isCrossPlatformSupplementEnabled,
+  listOnlinePlatforms,
+  listPlatformsForSource,
 } from '../utils/crossPlatformMatch.js'
 import {
   parseDurationSeconds,
@@ -928,11 +930,14 @@ async function tryCrossPlatformSameQuality(task, meta, quality, settings) {
   const from = String(meta.source || task.source || '').trim()
   rememberTriedPlatform(meta, from)
   const exclude = [...(meta.skipPlatforms || [])]
+  const lockedId = String(meta.lockedSourceApiId || '').trim() || null
+  // 锁源时只在该音源支持的平台里继续找，避免跳到其它脚本
   const hit = await findNextCrossPlatformMatch({
     name: task.name,
     singer: task.singer,
     userId: task.user_id,
     excludePlatforms: exclude,
+    sourceId: lockedId,
   })
   if (!hit) {
     meta.crossPlatformExhausted = true
@@ -1639,13 +1644,25 @@ function finalizePartFile(partPath, filePath) {
   fs.renameSync(partPath, filePath)
 }
 
-/** 多音源时：优先当前/最近音源，再其余激活音源；无激活列表时退回未锁定一轮 */
-function orderDownloadSourceIds(activeIds, meta = {}) {
+/** 多音源时：优先已锁定/记录的音源，否则优先声明了曲目平台的激活源，再其余 */
+function orderDownloadSourceIds(activeIds, meta = {}, userId = null) {
   const ids = [...new Set((activeIds || []).map(String).filter(Boolean))]
   if (!ids.length) return [null]
   const prefer = String(meta.sourceApiId || meta.lockedSourceApiId || '').trim()
   if (prefer && ids.includes(prefer)) {
     return [prefer, ...ids.filter((id) => id !== prefer)]
+  }
+  const plat = String(meta.source || '').trim()
+  if (plat && plat !== 'local') {
+    const hit = ids.find((id) => {
+      try {
+        const declared = listPlatformsForSource(userId, id)
+        return declared.includes(plat)
+      } catch {
+        return false
+      }
+    })
+    if (hit) return [hit, ...ids.filter((id) => id !== hit)]
   }
   return ids
 }
@@ -1722,15 +1739,15 @@ async function downloadTask(task, settings, abortSignal = null) {
   const quality = task.quality || '320k'
   let lastError = null
   let lastAttemptPath = ''
-  const MAX_PLATFORM_HOPS = 5
-  const sourceOrder = orderDownloadSourceIds(getStoredActiveSourceIds(task.user_id), meta)
+  const allowCrossPlatform = isCrossPlatformSupplementEnabled(settings)
+  const sourceOrder = orderDownloadSourceIds(getStoredActiveSourceIds(task.user_id), meta, task.user_id)
   const identitySnap = snapshotTrackIdentity(task, meta)
 
   try {
     // 取链前先按「主文件名」检测本地同名（扩展名不同也算），避免无效请求
     if (await handleExistingSameNameFile(task, meta, settings)) return
 
-    // 顺序：当前音源 → 换平台同档 → 再换下一个音源 → 再换平台
+    // 顺序：当前音源穷尽各平台 → 再换下一个激活音源 → 再穷尽其平台
     for (let si = 0; si < sourceOrder.length; si++) {
       const lockedId = sourceOrder[si]
       if (lockedId) {
@@ -1761,7 +1778,13 @@ async function downloadTask(task, settings, abortSignal = null) {
         saveTaskMeta(task.id, meta)
       }
 
-      for (let hop = 0; hop < MAX_PLATFORM_HOPS; hop++) {
+      // 关闭跨平台时每个音源只试当前曲目平台；开启时穷尽该音源可用平台
+      const platformCount = lockedId
+        ? listPlatformsForSource(task.user_id, lockedId).length
+        : listOnlinePlatforms(task.user_id).length
+      const maxPlatformHops = allowCrossPlatform ? Math.max(1, platformCount || 5) : 1
+
+      for (let hop = 0; hop < maxPlatformHops; hop++) {
         let source = meta.source || task.source
         let musicInfo = buildMusicInfoFromTask(task, meta)
 

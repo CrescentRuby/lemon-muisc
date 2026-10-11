@@ -64,7 +64,7 @@
       <div class="player-info">
         <span class="player-name">
           {{ currentPlaying ? `${cleanText(currentPlaying.name)} - ${formatArtists(currentPlaying.singer)}` : '未选择歌曲' }}
-          <em v-if="currentPlaying && currentPlayPlatformLabel" class="player-platform">{{ currentPlayPlatformLabel }}</em>
+          <em v-if="currentPlaying && currentPlaySourceMetaLabel" class="player-platform">{{ currentPlaySourceMetaLabel }}</em>
         </span>
         <span class="player-lyric" :class="{ empty: currentPlaying && !currentLyricText && !playerError && !playerNotice, error: !!playerError, notice: !playerError && !!playerNotice }">
           {{ playerError || playerNotice || (currentPlaying ? (currentLyricText || '暂无歌词') : '未知艺术家') }}
@@ -505,7 +505,7 @@ import {
   playQueue, currentQueueIndex, playMode, playModeLabel, showQueuePanel, playerError, playerNotice,
   queueSource, queuePanelTitle,
   sleepTimerMinutes, sleepTimerLeftLabel, setSleepTimer, clearSleepTimer,
-  currentPlayPlatformLabel,
+  currentPlaySourceMetaLabel,
   togglePause, stopPlay, seekTo, previewSeek, commitSeek, setVolume, toggleMute, fmtTime, initPlayer,
   playNext, playPrev, togglePlayMode, resumeOrTogglePause, unlockAudioFromGesture,
   removeFromQueue,   clearQueue, playTrackAt, openFullscreenPlayer,

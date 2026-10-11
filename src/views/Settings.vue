@@ -656,8 +656,8 @@
 
       <!-- 音源管理 -->
       <div v-if="activeTab === 'source'" class="panel-body">
-        <p v-if="isAdminUser" class="source-tip">支持同时激活多个音源（落雪兼容 / 澜音原生 .js）。每个账号的激活状态相互独立；点「平台」可单独开关该音源支持的平台。若某平台近期多为试听片段，会自动关闭该音源对它的解析。试听 / 下载时按平台匹配，同一平台有多个音源时优先使用最近激活的。</p>
-        <p v-else class="source-tip">音源脚本由管理员导入。你可以自行激活或停用音源，并点「平台」单独开关各平台（仅对自己生效）。某平台被检测为多为试听时会自动关闭解析。列表旁的健康标注来自本机近期播放/下载。</p>
+        <p v-if="isAdminUser" class="source-tip">支持同时激活多个音源（落雪兼容 / 澜音原生 .js）。每个账号的激活状态相互独立；点「平台」可单独开关该音源支持的平台。若某平台近期多为试听片段，会自动关闭该音源对它的解析。试听 / 下载顺序：当前音源先穷尽其可用平台，再按激活列表切换下一个音源继续查找。</p>
+        <p v-else class="source-tip">音源脚本由管理员导入。你可以自行激活或停用音源，并点「平台」单独开关各平台（仅对自己生效）。某平台被检测为多为试听时会自动关闭解析。试听 / 下载按「当前源各平台 → 下一激活源各平台」查找；列表旁的健康标注来自本机近期播放/下载。</p>
         <div v-if="isAdminUser" class="setting-item">
           <div class="setting-item-info">
             <div class="setting-item-label">音源切换方式</div>
@@ -1124,7 +1124,7 @@
         <div class="setting-item">
           <div class="setting-item-info">
             <div class="setting-item-label">试听音质</div>
-            <div class="setting-item-desc">在线试听优先使用的音质；当前平台没有时先跨平台同档补源，再降档。本地文件不受影响</div>
+            <div class="setting-item-desc">在线试听优先使用的音质。查找顺序：当前音源先试各平台同档 → 再换其它激活音源各平台 → 仍没有再降档。本地文件不受影响</div>
           </div>
           <div class="setting-item-action">
             <AppSelect
@@ -1138,7 +1138,7 @@
         <div class="setting-item">
           <div class="setting-item-info">
             <div class="setting-item-label">跨平台补源</div>
-            <div class="setting-item-desc">试听 / 下载拿不到所选音质时，先搜其它平台同名曲尝试同档，再考虑降档。批量下载同样生效</div>
+            <div class="setting-item-desc">开启后：每个激活音源会先在当前平台取链，再搜其它平台同名曲尝试同档；该音源各平台都失败后再换下一个激活音源。关闭则只在当前曲目平台上轮换音源。试听与下载共用</div>
           </div>
           <label class="toggle">
             <input type="checkbox" :checked="settings['download.isUseOtherSource'] !== 'false'" @change="toggleCrossPlatformSupplement" />
@@ -1147,11 +1147,11 @@
         </div>
         <div class="setting-item">
           <div class="setting-item-info">
-            <div class="setting-item-label">车机 / 弱网流畅播放</div>
+            <div class="setting-item-label">本地转码（弱网 / 车机）</div>
             <div class="setting-item-desc">
-              本地 FLAC 等无损先在 NAS 转成约 128kbps AAC 再播，并预热下一首；在线试听也会压到 128k。
-              减轻无线 CarPlay 与拉歌抢同一路 WiFi 时的断续。开启后会自动关闭音频可视化，并降低锁屏/车机 Now Playing 进度推送频率。
-              有线 CarPlay 一般不需要。首次播放可能稍慢，之后可秒开。需要可用的 ffmpeg。iPhone/iPad 默认开启。
+              开启：本地 FLAC 等先在 NAS 转成约 128kbps AAC 再播，并预热下一首；在线试听也会压到 128k，适合无线 CarPlay / 弱网。
+              关闭：始终直出原文件，不自动转码；播不动时会提示网络不佳并建议开转码，连播时自动跳下一曲。
+              开启后会关闭音频可视化。需要可用的 ffmpeg。iPhone/iPad 默认开启。
             </div>
           </div>
           <label class="toggle">
@@ -3056,8 +3056,8 @@ async function toggleSmoothStreamSetting() {
     await loadPlayerSettings()
     showToast(
       turningOn
-        ? '已开启流畅播放：本地无损转 128k AAC，并已关闭音频可视化'
-        : '已关闭流畅播放：本地文件直出',
+        ? '已开启本地转码：弱网下转 128k AAC，并已关闭音频可视化'
+        : '已关闭本地转码：始终直出原文件；播不动会提示并可跳下一曲',
       'success',
     )
   } catch (e) {

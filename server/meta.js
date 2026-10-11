@@ -42,8 +42,38 @@ function decodePicInput(pic) {
   return null
 }
 
+/** 重写前保留的既有 ID3 字段（避免 removeTags 后丢曲目号等） */
+const MP3_PRESERVE_KEYS = [
+  'title', 'artist', 'album', 'performerInfo', 'year', 'genre', 'comment',
+  'trackNumber', 'partOfSet', 'composer', 'conductor', 'remixArtist',
+  'originalArtist', 'publisher', 'contentGroup', 'bpm', 'length',
+  'unsynchronisedLyrics', 'image',
+]
+
+function pickPreservedMp3Tags(prev = {}) {
+  const out = {}
+  if (!prev || typeof prev !== 'object') return out
+  for (const key of MP3_PRESERVE_KEYS) {
+    if (prev[key] == null || prev[key] === '') continue
+    out[key] = prev[key]
+  }
+  if (out.comment != null) {
+    const text = typeof out.comment === 'string' ? out.comment : (out.comment?.text || '')
+    out.comment = { language: 'chi', text: String(text || '') }
+  }
+  if (out.unsynchronisedLyrics != null && typeof out.unsynchronisedLyrics === 'string') {
+    out.unsynchronisedLyrics = { language: 'chi', text: out.unsynchronisedLyrics }
+  }
+  return out
+}
+
 function writeMp3Meta(filePath, meta) {
-  const tags = {}
+  // 先读旧标签再整表重写：NodeID3.write 遇重复帧时易追加，导致 TIT2/TPE1 双份
+  // （NodeID3 读到第一帧正确值，music-metadata 读到最后一帧乱码）
+  let prev = {}
+  try { prev = NodeID3.read(filePath) || {} } catch { prev = {} }
+  const tags = pickPreservedMp3Tags(prev)
+
   if (meta.title != null) tags.title = meta.title
   if (meta.artist != null) {
     // ID3v2.3 / node-id3：写展示串「A / B」（规范多值需 v2.4 NUL，库支持有限）
@@ -67,6 +97,8 @@ function writeMp3Meta(filePath, meta) {
       description: 'Cover',
       imageBuffer: picBuf,
     }
+  } else if (meta.clearPicture === true || meta.pic === '') {
+    delete tags.image
   }
 
   if (meta.lyric != null) {
@@ -76,6 +108,7 @@ function writeMp3Meta(filePath, meta) {
     }
   }
 
+  try { NodeID3.removeTags(filePath) } catch {}
   const ok = NodeID3.write(tags, filePath)
   if (!ok) throw new Error(typeof ok === 'object' ? JSON.stringify(ok) : 'MP3 标签写入失败')
 }
@@ -274,17 +307,25 @@ function extractCommentText(comments) {
   return normalizeTagText(c?.text || '')
 }
 
-/** 修复 ID3 等标签 UTF-8 被误读为 Latin-1 的乱码 */
+/** 修复 ID3 等标签 UTF-8 被误读为 Latin-1 的乱码（支持整段或夹杂片段） */
 export function normalizeTagText(value) {
   if (value == null) return ''
   let s = String(value).trim()
   if (!s) return ''
-  if (/[\u4e00-\u9fff]/.test(s)) return s
-  if (/[ÃÂÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýÿ]/.test(s)) {
+  if (/[\u4e00-\u9fff]/.test(s) && !isLikelyTagMojibake(s)) return s
+  if (/[ÃÂÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿÎÐÑ]/.test(s)) {
     try {
       const fixed = Buffer.from(s, 'latin1').toString('utf8').trim()
-      if (fixed && !fixed.includes('\uFFFD') && /[\u4e00-\u9fff]/.test(fixed)) return fixed
+      if (fixed && !fixed.includes('\uFFFD') && /[\u4e00-\u9fff]/.test(fixed) && !isLikelyTagMojibake(fixed)) {
+        return fixed
+      }
     } catch {}
+  }
+  // 片段修复：前缀序号 + 乱码正文（如「02. Îòô.ûå」）
+  const m = s.match(/^(\d{1,3}[\s._\-)]+)(.+)$/)
+  if (m) {
+    const rest = normalizeTagText(m[2])
+    if (rest && rest !== m[2] && /[\u4e00-\u9fff]/.test(rest)) return `${m[1]}${rest}`.trim()
   }
   return s
 }
@@ -477,23 +518,40 @@ function isBrokenId3Language(lang) {
 }
 
 function preferReadableComment(primary, recovered) {
-  const a = String(primary || '').trim()
-  const b = String(recovered || '').trim()
+  return preferReadableTag(primary, recovered)
+}
+
+/** 两路标签择优：优先可读中文 / 非乱码；并列时取 primary（应为 NodeID3） */
+function preferReadableTag(primary, fallback) {
+  const a = normalizeTagText(primary)
+  const b = normalizeTagText(fallback)
   if (!b) return a
   if (!a) return b
-  // 已有可读中文且不像乱码时保留
-  if (/[\u4e00-\u9fff]/.test(a) && !isLikelyCommentMojibake(a)) return a
-  if (/[\u4e00-\u9fff]/.test(b) && !isLikelyCommentMojibake(b)) return b
+  const aBad = isLikelyTagMojibake(a)
+  const bBad = isLikelyTagMojibake(b)
+  if (!aBad && bBad) return a
+  if (aBad && !bBad) return b
+  if (/[\u4e00-\u9fff]/.test(a) && !aBad) return a
+  if (/[\u4e00-\u9fff]/.test(b) && !bBad) return b
   return a || b
 }
 
-/** 粗检：大量冷僻/符号混排的「假中文」乱码 */
+/** 粗检：大量冷僻/符号混排的「假中文」乱码，或 UTF-8 被当成 Latin-1 */
 function isLikelyCommentMojibake(text) {
+  return isLikelyTagMojibake(text)
+}
+
+export function isLikelyTagMojibake(text) {
   const s = String(text || '')
   if (!s) return false
+  // UTF-8 被当成 Latin-1 的典型字节痕迹（且几乎无汉字）
+  if (/[ÃÂÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ]/.test(s)
+    && !/[\u4e00-\u9fff]/.test(s)) {
+    return true
+  }
   const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length
   const weird = (s.match(/[\u0100-\u024f\u1100-\u11ff\u3040-\u30ff\ua000-\uffff∏⁑⧈]/g) || []).length
-  // 正常中文描述几乎全是常用汉字；乱码里冷僻字/假名/符号占比高
+  // 正常中文几乎全是常用汉字；乱码里冷僻字/假名/符号占比高
   return weird > Math.max(3, cjk * 0.35)
 }
 
@@ -704,17 +762,20 @@ function readMp3NativeTags(filePath) {
 
 function mergeNativeMeta(base, native, { lite = false } = {}) {
   if (!native) return base
-  const pick = (primary, fallback) => (primary || fallback || '')
-  const lyric = lite ? (base.lyric || '') : (base.lyric || native.lyric || '')
+  // MP3 重复帧时：NodeID3 取第一帧（整理后写入的正确值），music-metadata 取最后一帧（残留乱码）。
+  // 文本字段必须以 native(NodeID3) 优先，否则库缓存/列表会显示乱码或「整理后没变化」。
+  const lyric = lite
+    ? (base.lyric || '')
+    : preferReadableTag(native.lyric, base.lyric)
   return {
     ...base,
-    title: pick(base.title, native.title),
-    artist: pick(base.artist, native.artist),
-    albumArtist: pick(base.albumArtist, native.albumArtist),
-    album: pick(base.album, native.album),
-    year: base.year || native.year || '',
-    genre: pick(base.genre, native.genre),
-    comment: preferReadableComment(base.comment, native.comment),
+    title: preferReadableTag(native.title, base.title),
+    artist: preferReadableTag(native.artist, base.artist),
+    albumArtist: preferReadableTag(native.albumArtist, base.albumArtist),
+    album: preferReadableTag(native.album, base.album),
+    year: native.year || base.year || '',
+    genre: preferReadableTag(native.genre, base.genre),
+    comment: preferReadableComment(native.comment, base.comment),
     lyric,
     hasPicture: Boolean(base.hasPicture || native.hasPicture),
     hasLyrics: Boolean(base.hasLyrics || native.hasLyrics || (!lite && lyric)),

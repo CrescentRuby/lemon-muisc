@@ -4,6 +4,11 @@
 import { searchMusic, AVAILABLE_SOURCES } from '../musicSdk.js'
 import { getDisplaySources } from './displaySources.js'
 import { buildMusicInfo } from './musicInfo.js'
+import {
+  isSourcePlatformEnabled,
+  platformsDeclaredBySource,
+  PLATFORM_ORDER,
+} from './enabledPlatforms.js'
 
 const MIN_MATCH_SCORE = 60
 
@@ -37,7 +42,25 @@ export function listOnlinePlatforms(userId = null, exclude = []) {
   const skip = new Set((exclude || []).map(String).filter(Boolean))
   skip.add('local')
   const map = getDisplaySources(userId) || AVAILABLE_SOURCES
-  return Object.keys(map).filter((k) => k && !skip.has(k) && AVAILABLE_SOURCES[k])
+  const keys = Object.keys(map).filter((k) => k && !skip.has(k) && AVAILABLE_SOURCES[k])
+  // 稳定顺序，与设置页平台顺序一致
+  const ordered = PLATFORM_ORDER.filter((k) => keys.includes(k))
+  const rest = keys.filter((k) => !ordered.includes(k))
+  return [...ordered, ...rest]
+}
+
+/** 某激活音源可用的平台（脚本声明 ∩ 用户开关），用于「锁源后穷尽平台」 */
+export function listPlatformsForSource(userId = null, sourceId = null, exclude = []) {
+  const sid = String(sourceId || '').trim()
+  if (!sid) return listOnlinePlatforms(userId, exclude)
+  const skip = new Set((exclude || []).map(String).filter(Boolean))
+  skip.add('local')
+  const declared = platformsDeclaredBySource(sid)
+  return declared.filter((k) => {
+    if (!k || skip.has(k) || !AVAILABLE_SOURCES[k]) return false
+    if (userId && !isSourcePlatformEnabled(userId, sid, k)) return false
+    return true
+  })
 }
 
 function searchKeywords(name, artist) {
@@ -88,7 +111,8 @@ export async function findCrossPlatformMatch({
 }
 
 /**
- * 按平台顺序找下一首可用同曲；excludePlatforms 为已试过的平台
+ * 按平台顺序找下一首可用同曲；excludePlatforms 为已试过的平台。
+ * 传入 sourceId 时只在该音源支持的平台里找（锁源穷尽平台）。
  */
 export async function findNextCrossPlatformMatch({
   name,
@@ -96,8 +120,11 @@ export async function findNextCrossPlatformMatch({
   artist,
   userId = null,
   excludePlatforms = [],
+  sourceId = null,
 } = {}) {
-  const platforms = listOnlinePlatforms(userId, excludePlatforms)
+  const platforms = sourceId
+    ? listPlatformsForSource(userId, sourceId, excludePlatforms)
+    : listOnlinePlatforms(userId, excludePlatforms)
   for (const platform of platforms) {
     const hit = await findCrossPlatformMatch({ name, singer, artist, platform })
     if (hit) return hit

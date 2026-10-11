@@ -5,7 +5,7 @@ import { getDB } from '../db.js'
 import { getMusicPaths, getAllMusicScanRoots, isUnderConfiguredMusicDir, isPathUnderMusicDirs } from './filePaths.js'
 import { listAudioFiles } from './audioScan.js'
 import { parseFilename } from './filenameParse.js'
-import { readMetaLite } from '../meta.js'
+import { readMetaLite, isLikelyTagMojibake } from '../meta.js'
 import { mapWithConcurrency } from './asyncPool.js'
 import { splitArtists } from './artistTag.js'
 
@@ -575,9 +575,18 @@ function isDiskEntryFresh(row, filePath) {
   }
 }
 
-/** 旧版曾误清空「专辑名=标题」的标签，需强制重扫 */
+/** 旧版曾误清空「专辑名=标题」的标签，或缓存了重复帧乱码时，需强制重扫 */
 function needsAlbumCacheRefresh(cached) {
-  if (!cached?.title) return false
+  if (!cached) return false
+  if (
+    isLikelyTagMojibake(cached.title)
+    || isLikelyTagMojibake(cached.artist)
+    || isLikelyTagMojibake(cached.album)
+    || isLikelyTagMojibake(cached.albumArtist)
+  ) {
+    return true
+  }
+  if (!cached.title) return false
   if (cached.album) return false
   return true
 }

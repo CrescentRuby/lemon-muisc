@@ -115,8 +115,9 @@ import {
   coverUrl,
   displayDuration,
   fmtTime,
-  playQuality,
+  currentPlaySourceMetaLabel,
   currentPlayPlatformLabel,
+  currentPlayQualityLabel,
 } from '../stores/player.js'
 import { localCoverUrl } from '../stores/library.js'
 
@@ -190,14 +191,14 @@ const rows = computed(() => {
     list.push({ label: '位深', value: `${meta.bitsPerSample} bit` })
   }
 
-  if (!filePath.value) {
-    const q = playQuality.value
-    if (q) list.push({ label: '试听音质', value: getQualityLabel(q, t.types) })
-    const plat = currentPlayPlatformLabel.value || platformLabel(t.source)
-    if (plat) list.push({ label: '音源', value: plat })
-    else if (t.source) list.push({ label: '音源', value: String(t.source) })
-  } else {
-    list.push({ label: '来源', value: '本地文件' })
+  const plat = currentPlayPlatformLabel.value
+    || (filePath.value ? '本地' : (platformLabel(t.source) || String(t.source || '')))
+  const qual = currentPlayQualityLabel.value
+    || (!filePath.value ? getQualityLabel(t.quality || t.preferredQuality || '', t.types) : '')
+  if (plat) list.push({ label: '来源', value: plat })
+  if (qual) list.push({ label: '音质', value: qual })
+  else if (currentPlaySourceMetaLabel.value) {
+    list.push({ label: '试听', value: currentPlaySourceMetaLabel.value })
   }
 
   if (filePath.value) list.push({ label: '路径', value: filePath.value })
