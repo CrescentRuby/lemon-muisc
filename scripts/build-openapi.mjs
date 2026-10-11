@@ -476,6 +476,8 @@ const spec = {
       '',
       '本地转码：`smooth=true` 请求 AAC 流；关闭用户设置「本地转码」时客户端应直出 `/play/local`。',
       '',
+      '稳定性：已公开路径与字段尽量固定；新功能新开路由或可选字段，避免破坏第三方客户端（详见 docs/open-api.md）。',
+      '',
       '人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。',
     ].join('\n'),
     license: { name: 'MIT' },

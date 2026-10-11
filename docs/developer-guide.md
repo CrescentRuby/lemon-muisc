@@ -74,6 +74,7 @@ lemon-muisc/
 - `POST /api/auth/login` 签发会话 → `sessions` 表；前端存 `localStorage["lemon-auth-token"]`
 - 除 `/auth/*`、`/health`、以及开放元信息（`/`、`/openapi.json`、`/docs`）外，所有 `/api/*` 均经 `requireAuth` 中间件
 - **开放 API**：同一路由器双挂载 `/api` 与 `/api/v1`；曲目稳定 `trackId`；流式优先 `?ticket=` 短时效媒体票（兼容 `?token=`）
+- **接口稳定性**：已公开路径/字段尽量固定；新功能**新开路由或可选字段**，禁止频繁改写既有契约（详见 [open-api.md · 接口稳定性约定](./open-api.md#接口稳定性约定给第三方客户端)）
 - WebSocket 以 URL 参数 `?token=` 校验（`validateWsToken`）
 - 音频流 URL 由 `appendStreamToken` 签发（优先 ticket）
 - 角色：`admin`（用户/路径管理）、`user`（普通用户）
