@@ -62,10 +62,10 @@
         </div>
       </div>
       <div class="player-info">
-        <span class="player-name">
-          {{ currentPlaying ? `${cleanText(currentPlaying.name)} - ${formatArtists(currentPlaying.singer)}` : '未选择歌曲' }}
+        <div class="player-name-row">
+          <span class="player-name">{{ currentPlaying ? `${cleanText(currentPlaying.name)} - ${formatArtists(currentPlaying.singer)}` : '未选择歌曲' }}</span>
           <em v-if="currentPlaying && currentPlaySourceMetaLabel" class="player-platform">{{ currentPlaySourceMetaLabel }}</em>
-        </span>
+        </div>
         <span class="player-lyric" :class="{ empty: currentPlaying && !currentLyricText && !playerError && !playerNotice, error: !!playerError, notice: !playerError && !!playerNotice }">
           {{ playerError || playerNotice || (currentPlaying ? (currentLyricText || '暂无歌词') : '未知艺术家') }}
         </span>
@@ -1128,8 +1128,16 @@ async function onQueuePlayClick(index) {
 @keyframes disc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .player-info { min-width: 0; flex: 1; }
+.player-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
 .player-name {
-  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
   overflow: hidden;
@@ -1138,17 +1146,18 @@ async function onQueuePlayClick(index) {
   line-height: 1.4;
 }
 .player-platform {
+  flex: 0 0 auto;
   display: inline-block;
-  margin-left: 6px;
   padding: 0 6px;
   border-radius: 999px;
   font-size: 11px;
   font-style: normal;
   font-weight: 500;
-  vertical-align: 1px;
+  line-height: 1.5;
   color: var(--accent);
   background: var(--accent-muted);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  white-space: nowrap;
 }
 .player-lyric {
   display: block;
@@ -1821,10 +1830,19 @@ async function onQueuePlayClick(index) {
   min-width: 0;
 }
 
+.player-bar.compact .player-name-row {
+  gap: 4px;
+}
 .player-bar.compact .player-name {
   font-size: 13px;
   line-height: 1.3;
-  max-width: none;
+}
+.player-bar.compact .player-platform {
+  font-size: 10px;
+  padding: 0 5px;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .player-bar.compact .player-lyric {

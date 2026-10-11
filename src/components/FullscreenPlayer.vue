@@ -62,7 +62,7 @@
             <div class="fs-meta">
               <div class="fs-title">{{ cleanText(currentPlaying?.name) || '未知歌曲' }}</div>
               <div class="fs-artist">
-                {{ formatArtists(currentPlaying?.singer) || '未知艺术家' }}
+                <span class="fs-artist-text">{{ formatArtists(currentPlaying?.singer) || '未知艺术家' }}</span>
                 <em v-if="currentPlaySourceMetaLabel" class="fs-platform">{{ currentPlaySourceMetaLabel }}</em>
               </div>
               <div v-if="playerError" class="fs-error">{{ playerError }}</div>
@@ -1408,10 +1408,19 @@ watch(currentPlaying, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+.fs-artist-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .fs-platform {
+  flex: 0 0 auto;
   font-style: normal;
   font-size: 12px;
   padding: 2px 8px;
@@ -1419,6 +1428,7 @@ watch(currentPlaying, () => {
   color: #9fdfff;
   background: rgba(64, 180, 255, 0.16);
   border: 1px solid rgba(120, 200, 255, 0.35);
+  white-space: nowrap;
 }
 .fs-error {
   margin-top: 8px;
