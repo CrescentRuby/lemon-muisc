@@ -42,6 +42,7 @@ export const USER_SETTING_KEYS = new Set([
   'library.favoriteAlbums',
   'library.favoriteArtists',
   'library.recentPlays',
+  'library.playStats',
   'library.userDataRevision',
   'ui.theme',
   'ui.librarySongColumns',

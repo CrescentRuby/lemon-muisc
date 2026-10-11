@@ -6,6 +6,7 @@ const KEYS = {
   favoriteAlbums: 'library.favoriteAlbums',
   favoriteArtists: 'library.favoriteArtists',
   recentPlays: 'library.recentPlays',
+  playStats: 'library.playStats',
   revision: 'library.userDataRevision',
 }
 
@@ -58,6 +59,7 @@ export function getLibraryUserData(userId) {
     favoriteAlbums: readArray(userId, KEYS.favoriteAlbums),
     favoriteArtists: readArray(userId, KEYS.favoriteArtists),
     recentPlays: readArray(userId, KEYS.recentPlays),
+    playStats: readArray(userId, KEYS.playStats),
     revision: readNumber(userId, KEYS.revision),
   }
 }
@@ -68,6 +70,7 @@ export function setLibraryUserData(userId, {
   favoriteAlbums,
   favoriteArtists,
   recentPlays,
+  playStats,
   revision,
 } = {}) {
   if (playlists !== undefined) writeArray(userId, KEYS.playlists, playlists)
@@ -75,6 +78,7 @@ export function setLibraryUserData(userId, {
   if (favoriteAlbums !== undefined) writeArray(userId, KEYS.favoriteAlbums, favoriteAlbums)
   if (favoriteArtists !== undefined) writeArray(userId, KEYS.favoriteArtists, favoriteArtists)
   if (recentPlays !== undefined) writeArray(userId, KEYS.recentPlays, recentPlays)
+  if (playStats !== undefined) writeArray(userId, KEYS.playStats, playStats)
   if (revision !== undefined) writeNumber(userId, KEYS.revision, revision)
 }
 

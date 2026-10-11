@@ -352,6 +352,7 @@ export function migrateAuthData(adminUserId) {
     'library.favoriteAlbums',
     'library.favoriteArtists',
     'library.recentPlays',
+    'library.playStats',
     'library.userDataRevision',
     'ui.theme',
     'player.coverStyle',

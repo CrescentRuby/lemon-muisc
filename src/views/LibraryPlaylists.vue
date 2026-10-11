@@ -58,6 +58,9 @@
             <template v-if="isFavoritesSelected">
               {{ selectedCard.count }} 首 · {{ favoriteAlbums.length }} 张专辑 · {{ favoriteArtists.length }} 位歌手
             </template>
+            <template v-else-if="isPlayRankSelected">
+              {{ detailTracks.length }} 首 · 按播放次数排序
+            </template>
             <template v-else>
               {{ selectedCard.count }} 首
               <template v-if="canEditSelected && isImportedSelected">
@@ -69,11 +72,29 @@
               </template>
             </template>
           </p>
-          <p v-if="showFavoritesSongActions && selectedCard.tracks.length && !onlineTrackCount" class="detail-dl-hint">
+          <div v-if="isPlayRankSelected" class="rank-tabs" role="tablist" aria-label="听歌排行范围">
+            <button
+              type="button"
+              class="rank-tab"
+              role="tab"
+              :class="{ active: playRankRange === 'week' }"
+              :aria-selected="playRankRange === 'week'"
+              @click="playRankRange = 'week'"
+            >最近一周</button>
+            <button
+              type="button"
+              class="rank-tab"
+              role="tab"
+              :class="{ active: playRankRange === 'all' }"
+              :aria-selected="playRankRange === 'all'"
+              @click="playRankRange = 'all'"
+            >所有时间</button>
+          </div>
+          <p v-if="showFavoritesSongActions && detailTracks.length && !onlineTrackCount" class="detail-dl-hint">
             当前歌单歌曲均已在本地，无需下载；含「网络」标记的歌曲才会显示「下载歌单」。
           </p>
           <div v-if="showFavoritesSongActions" class="detail-actions">
-            <button class="btn-primary btn-sm" :disabled="!selectedCard.tracks.length" @click="playAll">播放全部</button>
+            <button class="btn-primary btn-sm" :disabled="!detailTracks.length" @click="playAll">播放全部</button>
             <button
               v-if="canEditSelected && isImportedSelected"
               class="btn-ghost btn-sm"
@@ -142,7 +163,7 @@
             <button
               v-if="canEditSelected"
               class="btn-ghost btn-sm"
-              :disabled="!selectedCard.tracks.length || dedupBusy"
+              :disabled="!detailTracks.length || dedupBusy"
               @click="openDedupModal"
             >
               歌单去重
@@ -216,8 +237,14 @@
           </div>
         </div>
       </template>
-      <div v-else-if="!selectedCard.tracks.length" class="detail-empty">
-        <p>{{ isFavoritesSelected ? '暂无收藏单曲' : '暂无歌曲' }}</p>
+      <div v-else-if="!detailTracks.length" class="detail-empty">
+        <p>{{
+          isFavoritesSelected
+            ? '暂无收藏单曲'
+            : (isPlayRankSelected
+              ? (playRankRange === 'week' ? '最近一周暂无播放记录' : '暂无播放记录')
+              : '暂无歌曲')
+        }}</p>
         <button v-if="canEditSelected" class="btn-primary btn-sm" @click="showAddModal = true">添加歌曲</button>
       </div>
       <template v-else>
@@ -242,10 +269,10 @@
           <button
             type="button"
             class="btn-ghost btn-sm"
-            :disabled="!selectedCard.tracks.length"
+            :disabled="!detailTracks.length"
             @click="toggleSelectAll"
           >
-            {{ allSelected ? '取消全选' : `全选 (${selectedCard.tracks.length})` }}
+            {{ allSelected ? '取消全选' : `全选 (${detailTracks.length})` }}
           </button>
           <button
             v-if="onlineTrackCount"
@@ -320,6 +347,7 @@
               />
               <div class="track-tags">{{ formatTrackTags({ ...song, album: '' }) }}</div>
             </div>
+            <span v-if="isPlayRankSelected && song.playCount" class="track-play-count">{{ song.playCount }} 次</span>
             <MobileRowActions
               :open="actionsOpenKey === song.key"
               @toggle="toggleRowActions(song.key)"
@@ -400,7 +428,7 @@
 
     <PlaylistDedupModal
       v-if="showDedupModal && selectedCard"
-      :tracks="selectedCard.tracks"
+      :tracks="detailTracks"
       :playlist-name="selectedCard.name || ''"
       :busy="dedupBusy"
       @close="showDedupModal = false"
@@ -522,6 +550,8 @@ import {
   randomPickLibraryTracks,
   setRoamTracks,
   ensureRoamPickPool,
+  getPlayRankEntries,
+  playStats,
 } from '../stores/library.js'
 import { api } from '../api.js'
 import { useProgressiveTrackCovers } from '../composables/useProgressiveTrackCovers.js'
@@ -614,13 +644,16 @@ const cardsLoading = ref(false)
 const visibleCards = computed(() => allCards.value.filter((c) => !c.hidden))
 const customCards = computed(() => visibleCards.value.filter((c) => !SMART_PLAYLIST_IDS.has(c.id)))
 const smartCards = computed(() => visibleCards.value.filter((c) => SMART_PLAYLIST_IDS.has(c.id)))
-/** 「漫游播放」入口始终置顶；有曲目时一并置顶「漫游歌单」。有自定义/导入歌单时其余只展示这些，否则展示智能歌单 */
+/** 「漫游播放」入口始终置顶；有曲目时一并置顶「漫游歌单」。听歌排行固定在最近播放前；有自定义歌单时仍保留这两项 */
 const sourceCards = computed(() => {
   const entry = smartCards.value.find((c) => c.id === 'random-start')
   const roam = smartCards.value.find((c) => c.id === 'roam')
-  const rest = customCards.value.length
-    ? customCards.value
-    : smartCards.value.filter((c) => c.id !== 'random-start' && c.id !== 'roam')
+  const playRank = smartCards.value.find((c) => c.id === 'play-rank')
+  const recent = smartCards.value.find((c) => c.id === 'recent-played')
+  if (customCards.value.length) {
+    return [entry, roam, playRank, recent, ...customCards.value].filter(Boolean)
+  }
+  const rest = smartCards.value.filter((c) => c.id !== 'random-start' && c.id !== 'roam')
   return [entry, roam, ...rest].filter(Boolean)
 })
 const gridCards = computed(() => {
@@ -632,12 +665,25 @@ const showPlaylistMoreBtn = computed(() => (
 ))
 const selectedCard = computed(() => allCards.value.find(c => c.id === selectedId.value) || null)
 const isFavoritesSelected = computed(() => selectedId.value === 'favorites')
+const isPlayRankSelected = computed(() => selectedId.value === 'play-rank')
+/** week=最近一周 · all=所有时间 */
+const playRankRange = ref('week')
 const favTab = ref('songs')
 const showFavoritesSongActions = computed(() => !isFavoritesSelected.value || favTab.value === 'songs')
 const canEditSelected = computed(() => isCustomPlaylist(selectedId.value))
 const isImportedSelected = computed(() => isImportedPlaylist(editingPlaylist.value))
 const editingPlaylist = computed(() => getCustomPlaylist(selectedId.value))
-const trackOrigins = computed(() => countPlaylistTrackOrigins(selectedCard.value?.tracks || []))
+const detailTracks = computed(() => {
+  if (!selectedCard.value) return []
+  if (!isPlayRankSelected.value) return selectedCard.value.tracks || []
+  // 依赖 playStats，播放后列表即时刷新
+  void playStats.value
+  return getPlayRankEntries(playRankRange.value).map((row) => {
+    const base = snapshotToPlayTrack(row) || row
+    return { ...base, key: row.key, playCount: row.playCount }
+  })
+})
+const trackOrigins = computed(() => countPlaylistTrackOrigins(detailTracks.value))
 const lastRemoteSyncLabel = computed(() => {
   const ts = editingPlaylist.value?.lastRemoteSyncedAt || editingPlaylist.value?.lastSyncedAt
   if (!ts) return ''
@@ -656,10 +702,10 @@ const deleteConfirmMessage = computed(() => {
   return `确定删除歌单「${name}」吗？此操作不可恢复。`
 })
 
-const trackTotalPages = computed(() => Math.max(1, Math.ceil((selectedCard.value?.tracks.length || 0) / trackPageSize)))
+const trackTotalPages = computed(() => Math.max(1, Math.ceil((detailTracks.value.length || 0) / trackPageSize)))
 const listStart = computed(() => (trackPage.value - 1) * trackPageSize)
 const pagedTracks = computed(() => {
-  const tracks = selectedCard.value?.tracks || []
+  const tracks = detailTracks.value || []
   return tracks.slice(listStart.value, listStart.value + trackPageSize)
 })
 
@@ -667,7 +713,7 @@ useProgressiveTrackCovers(() => pagedTracks.value, {
   enabled: () => Boolean(selectedCard.value && !isFavoritesSelected.value),
 })
 
-const allOnlineTracks = computed(() => (selectedCard.value?.tracks || []).filter(s => !s.isLocal))
+const allOnlineTracks = computed(() => detailTracks.value.filter(s => !s.isLocal))
 const onlineTrackCount = computed(() => allOnlineTracks.value.length)
 const selectedCount = computed(() => selectedDownloadKeys.value.size)
 const selectedDownloadCount = computed(() => selectedOnlineTracks.value.length)
@@ -675,7 +721,7 @@ const selectedOnlineTracks = computed(() =>
   allOnlineTracks.value.filter(s => selectedDownloadKeys.value.has(s.key))
 )
 const selectedTracks = computed(() =>
-  (selectedCard.value?.tracks || []).filter(s => selectedDownloadKeys.value.has(s.key))
+  detailTracks.value.filter(s => selectedDownloadKeys.value.has(s.key))
 )
 const batchDownloadCount = computed(() => selectedDownloadCount.value)
 const batchDownloadItems = computed(() => selectedOnlineTracks.value.map(trackPayload))
@@ -690,7 +736,7 @@ const pacedPreferredLabel = computed(() => {
   return q ? getQualityLabel(q) : ''
 })
 const allSelected = computed(() => {
-  const tracks = selectedCard.value?.tracks || []
+  const tracks = detailTracks.value || []
   return tracks.length > 0 && tracks.every(s => selectedDownloadKeys.value.has(s.key))
 })
 const allOnlineSelected = computed(() =>
@@ -717,10 +763,16 @@ const pageOnlineSomeSelected = computed(() =>
 watch(selectedId, () => {
   trackPage.value = 1
   favTab.value = 'songs'
+  playRankRange.value = 'week'
   selectedDownloadKeys.value = new Set()
   showDedupModal.value = false
   closeMenus()
   refreshActiveJob()
+})
+
+watch(playRankRange, () => {
+  trackPage.value = 1
+  selectedDownloadKeys.value = new Set()
 })
 
 watch(playlistCardsRevision, () => {
@@ -872,7 +924,7 @@ function toggleSelectPage() {
 }
 
 function toggleSelectAll() {
-  const tracks = selectedCard.value?.tracks || []
+  const tracks = detailTracks.value || []
   if (allSelected.value) {
     selectedDownloadKeys.value = new Set()
     return
@@ -1126,7 +1178,7 @@ async function onTrackCoverClick(song) {
 }
 
 async function playAll() {
-  const list = selectedCard.value?.tracks || []
+  const list = detailTracks.value || []
   if (!list.length) return
   // 漫游歌单走动态播放：自动续填 + 已播清理
   if (selectedCard.value?.id === ROAM_PLAYLIST_ID) {
@@ -1260,7 +1312,7 @@ function openEdit() {
 }
 
 function openDedupModal() {
-  if (!canEditSelected.value || !selectedCard.value?.tracks?.length) return
+  if (!canEditSelected.value || !detailTracks.value.length) return
   showDedupModal.value = true
 }
 
@@ -1563,6 +1615,42 @@ function artistInitial(name) {
 }
 .track-row.active .track-name { color: var(--accent); }
 .track-index { width: 28px; color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
+.track-play-count {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  white-space: nowrap;
+}
+.rank-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 10px 0 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+.rank-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rank-tab.active {
+  color: var(--text);
+  background: var(--bg-card, var(--bg));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
 .song-cover-btn {
   position: relative;
   width: 52px;

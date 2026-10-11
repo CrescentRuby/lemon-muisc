@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { currentUser } from '../utils/auth.js'
 import { api } from '../api.js'
-import { cleanText, cleanTrackItem } from '../utils/text.js'
+import { cleanText, cleanTrackItem, splitArtists } from '../utils/text.js'
 import { PLATFORM_ORDER } from '../utils/platforms.js'
 import { defaultSongRegion, discoverState, loadDiscoverSources } from './discover.js'
 import {
@@ -12,6 +12,7 @@ import {
   fileToLibraryTrack,
   getLibraryTrackKey,
   libraryTracks,
+  playStats,
   recentPlays,
   snapshotToPlayTrack,
 } from './library.js'
@@ -23,8 +24,6 @@ export const DAILY_REFRESH_MAX = 20
 export const DAILY_REFRESH_COOLDOWN_SEC = 20
 /** 最近播放里尽量避开的条数，减少「又是刚听过的」 */
 const RECENT_AVOID = 80
-/** 收藏只作少量点缀，避免整单像收藏夹 */
-const FAV_SEASONING = 5
 const HOT_SIZE = 100
 const CAR_SIZE = 60
 const NIGHT_SIZE = 40
@@ -256,6 +255,115 @@ function recentAvoidKeys(limit = RECENT_AVOID) {
   return keys
 }
 
+function normalizeArtistToken(name) {
+  return String(name || '').trim().toLowerCase()
+}
+
+/** 从收藏 / 听歌排行 / 最近播放提炼口味：歌手、风格、已听过的曲 */
+function collectTasteProfile() {
+  const artists = new Set()
+  const genres = new Set()
+  const likedKeys = new Set()
+  const heardKeys = new Set()
+
+  const absorb = (row, { like = false } = {}) => {
+    if (!row) return
+    const t = row.key ? row : fromSnapshot(row)
+    const k = trackKey(t)
+    if (k) {
+      heardKeys.add(k)
+      if (like) likedKeys.add(k)
+    }
+    for (const a of splitArtists(t?.singer || t?.artist || '')) {
+      const token = normalizeArtistToken(a)
+      if (token) artists.add(token)
+    }
+    for (const g of genreTags(t)) genres.add(g.toLowerCase())
+  }
+
+  for (const s of favorites.value || []) absorb(s, { like: true })
+  // 听得多的算强偏好
+  const ranked = [...(playStats.value || [])]
+    .filter((s) => (Number(s.count) || 0) > 0 || (s.recentAts || []).length)
+    .sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0))
+  for (const s of ranked.slice(0, 80)) absorb(s, { like: true })
+  for (const s of (recentPlays.value || []).slice(0, 40)) absorb(s, { like: false })
+
+  return { artists, genres, likedKeys, heardKeys }
+}
+
+function trackMatchesTaste(t, taste) {
+  if (!t || !taste) return false
+  const k = trackKey(t)
+  if (k && taste.likedKeys.has(k)) return true
+  for (const a of splitArtists(t?.singer || t?.artist || '')) {
+    if (taste.artists.has(normalizeArtistToken(a))) return true
+  }
+  for (const g of genreTags(t)) {
+    if (taste.genres.has(g.toLowerCase())) return true
+  }
+  return false
+}
+
+/**
+ * 一半按口味（收藏/常听歌手风格），一半探索新歌（避开刚听过、优先未进排行）。
+ * 「为新而来」：探索侧尽量抽没听过或很少听的曲。
+ */
+function pickHalfTasteHalfExplore(pool, size, seed, {
+  excludeKeys = new Set(),
+  pred = null,
+  avoidRecent = true,
+} = {}) {
+  const target = Math.max(0, size)
+  if (!target) return []
+  const taste = collectTasteProfile()
+  const recentBlock = avoidRecent ? recentAvoidKeys() : new Set()
+  const base = (pool || []).filter((t) => {
+    const k = trackKey(t)
+    if (!k || excludeKeys.has(k)) return false
+    if (pred && !pred(t)) return false
+    return true
+  })
+  if (!base.length) return []
+
+  const tasteHalf = Math.ceil(target / 2)
+  const exploreHalf = target - tasteHalf
+
+  const tastePool = base.filter((t) => trackMatchesTaste(t, taste) && !recentBlock.has(trackKey(t)))
+  // 口味池不足时放宽：允许刚听过的偏好曲
+  const tasteBase = tastePool.length >= Math.min(4, tasteHalf)
+    ? tastePool
+    : base.filter((t) => trackMatchesTaste(t, taste))
+  const tastePick = shufflePick(tasteBase, Math.min(tasteHalf, tasteBase.length), `${seed}-taste`)
+
+  const used = new Set(tastePick.map(trackKey))
+  const explorePool = base.filter((t) => {
+    const k = trackKey(t)
+    if (!k || used.has(k) || recentBlock.has(k)) return false
+    // 探索：优先非强偏好曲，避免两半撞车
+    if (taste.likedKeys.has(k)) return false
+    return true
+  })
+  const freshPool = explorePool.filter((t) => !taste.heardKeys.has(trackKey(t)))
+  const exploreBase = freshPool.length >= Math.min(4, exploreHalf) ? freshPool : explorePool
+  let explorePick = shufflePick(exploreBase, Math.min(exploreHalf, exploreBase.length), `${seed}-new`)
+
+  let mixed = [...tastePick, ...explorePick]
+  if (mixed.length < target) {
+    const used2 = new Set(mixed.map(trackKey))
+    const rest = shufflePick(
+      base.filter((t) => {
+        const k = trackKey(t)
+        return k && !used2.has(k) && !excludeKeys.has(k)
+      }),
+      target - mixed.length,
+      `${seed}-fill`,
+    )
+    mixed = [...mixed, ...rest]
+  }
+  return shufflePick(mixed, Math.min(target, mixed.length), `${seed}-order`)
+}
+
 function isLocalLikeTrack(t) {
   const src = String(t?.source || '')
   if (src === 'local' || !src) return Boolean(t?.filePath || t?.localPath || String(t?.key || '').startsWith('local:'))
@@ -334,64 +442,11 @@ function resolvePersistedDaily(saved, pool) {
 }
 
 /**
- * 本地半边：曲库探索为主，少塞刚听过的；收藏少量点缀。
+ * 本地半边：一半口味（收藏/常听），一半新歌探索（避开刚听过）。
  */
 function buildDailyLocal(pool, seed, size, { excludeKeys = new Set() } = {}) {
-  const target = Math.max(0, size)
-  if (!target) return []
-  const libraryKeys = new Set(pool.map(trackKey).filter(Boolean))
-  const avoidRecent = recentAvoidKeys()
-  const blocked = new Set([...excludeKeys, ...avoidRecent])
-
-  const fav = favorites.value
-    .map(fromSnapshot)
-    .filter((t) => {
-      const k = trackKey(t)
-      return k && !isGhostLocalTrack(t, libraryKeys) && !excludeKeys.has(k)
-    })
-
-  const preferGenres = new Set(fav.flatMap(genreTags))
-  const favPick = shufflePick(
-    fav.filter((t) => !avoidRecent.has(trackKey(t))),
-    Math.min(FAV_SEASONING, Math.max(1, Math.floor(target / 5))),
-    `${seed}-fav`,
-  )
-
-  const inPool = (t) => {
-    const k = trackKey(t)
-    return k && !blocked.has(k) && !favPick.some((f) => trackKey(f) === k)
-  }
-
-  let explore = pool.filter(inPool)
-  if (explore.length < target) {
-    explore = pool.filter((t) => {
-      const k = trackKey(t)
-      return k && !excludeKeys.has(k) && !favPick.some((f) => trackKey(f) === k)
-    })
-  }
-
-  const softPrefer = explore.filter((t) => {
-    if (!preferGenres.size) return isMandarinTrack(t)
-    return genreTags(t).some((g) => preferGenres.has(g)) || isMandarinTrack(t)
-  })
-  const softPool = softPrefer.length >= Math.min(8, target) ? softPrefer : explore
-  const need = Math.max(0, target - favPick.length)
-  const explorePick = shufflePick(softPool, need, `${seed}-explore`)
-
-  const used = new Set([...favPick, ...explorePick].map(trackKey))
-  let mixed = [...favPick, ...explorePick]
-  if (mixed.length < target) {
-    const rest = shufflePick(
-      pool.filter((t) => {
-        const k = trackKey(t)
-        return k && !used.has(k) && !excludeKeys.has(k)
-      }),
-      target - mixed.length,
-      `${seed}-rest`,
-    )
-    mixed = [...mixed, ...rest]
-  }
-  return shufflePick(mixed, target, `${seed}-order`).map((t) => cleanTrackItem({ ...t, source: t.source || 'local' }))
+  const picked = pickHalfTasteHalfExplore(pool, size, seed, { excludeKeys, avoidRecent: true })
+  return picked.map((t) => cleanTrackItem({ ...t, source: t.source || 'local' }))
 }
 
 /** 激活音源已开放的平台（与发现页一致，已含用户平台开关） */
@@ -686,8 +741,11 @@ export function pruneMixLocalTracks(filePaths) {
 }
 
 function buildThemed(pool, size, seed, pred) {
-  const matched = pool.filter(pred)
-  const base = matched.length >= Math.min(8, size) ? matched : pool
+  const matched = (pool || []).filter(pred)
+  const base = matched.length >= Math.min(8, size) ? matched : (pool || [])
+  // 主题池内仍一半口味一半新歌
+  const picked = pickHalfTasteHalfExplore(base, size, seed, { pred: null, avoidRecent: true })
+  if (picked.length) return picked
   return shufflePick(base, size, seed)
 }
 
@@ -738,16 +796,17 @@ function buildNightMix(pool, size, seed) {
   if (base.length < Math.min(10, size)) base = soft.length >= Math.min(8, size) ? soft : anyOk
   if (!base.length) return []
 
-  // 高分段多取一些再打乱，避免每天只剩同一批「标签最全」的歌
-  const prefer = shufflePick(base.slice(0, Math.min(base.length, size * 3)), size, seed)
-  if (prefer.length >= Math.min(8, size)) return prefer
-  const used = new Set(prefer.map(trackKey))
+  // 深夜候选池内：一半口味一半新歌；高分段优先入池
+  const rankedPool = base.slice(0, Math.min(base.length, size * 4))
+  const mixed = pickHalfTasteHalfExplore(rankedPool, size, seed, { avoidRecent: true })
+  if (mixed.length >= Math.min(8, size)) return mixed
+  const used = new Set(mixed.map(trackKey))
   const rest = shufflePick(
     anyOk.filter((t) => !used.has(trackKey(t))),
-    size - prefer.length,
+    size - mixed.length,
     `${seed}-rest`,
   )
-  return [...prefer, ...rest].slice(0, size)
+  return [...mixed, ...rest].slice(0, size)
 }
 
 function summarizeNet(item) {
@@ -840,14 +899,14 @@ export const dailyMixDesc = computed(() => {
   const onlineN = tracks.filter((t) => !isLocalLikeTrack(t)).length
   const localN = tracks.length - onlineN
   if (!mix.count) {
-    return '本地与激活音源平台约各一半。未激活音源或平台时则主要用本地曲库。'
+    return '一半按你的喜欢与常听，一半探索新歌；本地与激活音源约各一半。'
   }
   const bits = [`共 ${mix.count} 首`]
   if (localN || onlineN) bits.push(`本地 ${localN} / 平台 ${onlineN}`)
   if (mix.durationText) bits.push(mix.durationText)
   if (mix.themeText) bits.push(mix.themeText)
   bits.push(`今日还可换 ${left} 次`)
-  return `本地与平台约各一半生成，${bits.join('，')}。`
+  return `一半喜欢一半新歌，${bits.join('，')}。`
 })
 
 export async function refreshLibraryMix({ force = false } = {}) {
@@ -863,7 +922,8 @@ export async function refreshLibraryMix({ force = false } = {}) {
     const week = weekKey()
     const { m, day } = todayParts()
 
-    const dailyStoreKey = `lemon-mix-daily:${uid}:${today}`
+    // v2：本地半边改为一半口味一半新歌
+    const dailyStoreKey = `lemon-mix-daily-v2:${uid}:${today}`
     const refreshMeta = readDailyRefreshMeta(today)
     syncDailyRefreshUi(refreshMeta.used)
     const savedDaily = !force ? readPersist(dailyStoreKey) : null
@@ -889,11 +949,12 @@ export async function refreshLibraryMix({ force = false } = {}) {
       refreshUsed: refreshMeta.used,
     }
 
-    const hotKey = `lemon-mix-hot:${uid}:${week}`
-    const carKey = `lemon-mix-car:${uid}:${week}`
+    // v3：主题池内一半口味一半新歌
+    const hotKey = `lemon-mix-hot-v3:${uid}:${week}`
+    const carKey = `lemon-mix-car-v3:${uid}:${week}`
     const nightOn = isNightWindow()
-    // v2：轻柔舒缓向，避开旧版可能混入的躁动曲缓存
-    const nightKey = `lemon-mix-night-v2:${uid}:${today}`
+    // v3：轻柔向 + 半口味半探索
+    const nightKey = `lemon-mix-night-v3:${uid}:${today}`
 
     const restore = (storeKey, builder) => {
       const cached = !force ? readPersist(storeKey) : null
@@ -922,7 +983,7 @@ export async function refreshLibraryMix({ force = false } = {}) {
         name: '华语热歌榜',
         subtitle: netHot
           ? `今日 · ${netHot.name}${netHot.total ? ` · ${netHot.total} 首` : ''}`
-          : (hot.length ? `本周更新 · ${hot.length} 首` : '本周更新 · 从华语曲目中挑选'),
+          : (hot.length ? `一半喜欢一半新歌 · ${hot.length} 首` : '本周更新 · 从华语曲目中挑选'),
         tone: 'orange',
         icon: 'flame',
         locked: false,
@@ -935,7 +996,7 @@ export async function refreshLibraryMix({ force = false } = {}) {
         subtitle: nightOn
           ? (netNight
             ? `轻柔夜听 · ${netNight.name}${netNight.total ? ` · ${netNight.total} 首` : ''}`
-            : (night.length ? `轻音乐 / 舒缓 · ${night.length} 首` : '曲库暂少轻柔曲，可先听网络轻音乐歌单'))
+            : (night.length ? `轻柔 · 一半喜欢一半新歌 · ${night.length} 首` : '曲库暂少轻柔曲，可先听网络轻音乐歌单'))
           : '晚间 22:00 后解锁 · 轻音乐与舒缓曲',
         tone: 'purple',
         icon: 'night',
@@ -948,7 +1009,7 @@ export async function refreshLibraryMix({ force = false } = {}) {
         name: '车载慢摇',
         subtitle: netCar
           ? `今日 · ${netCar.name}${netCar.total ? ` · ${netCar.total} 首` : ''}`
-          : (car.length ? `${car.length} 首 · 节奏舒缓` : '60 首 · 节奏舒缓'),
+          : (car.length ? `${car.length} 首 · 一半喜欢一半新歌` : '60 首 · 一半喜欢一半新歌'),
         tone: 'green',
         icon: 'car',
         locked: false,

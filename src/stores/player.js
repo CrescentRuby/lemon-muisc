@@ -12,6 +12,7 @@ import {
 } from './sourceFallback.js'
 import {
   recordRecentPlay,
+  recordPlayStat,
   localCoverUrl,
   bumpLibraryCoverVersion,
   removeRoamTrack,
@@ -147,6 +148,45 @@ export const smoothStreamEnabled = ref(false)
 export const PLAYER_SMOOTH_STREAM_KEY = 'player.smoothStream'
 /** >0 表示正处于自动连播跳曲，避免失败时再嵌套 playNextAuto */
 let playNextAutoDepth = 0
+
+/** 听歌排行：实际听满该秒数才计 1 次（暂停不计时） */
+const PLAY_STAT_MIN_SEC = 20
+let playStatAccumSec = 0
+let playStatLastTickMs = 0
+let playStatCountedKey = ''
+let playStatPendingTrack = null
+
+function beginPlayStatSession(track) {
+  playStatPendingTrack = track || null
+  playStatAccumSec = 0
+  playStatLastTickMs = 0
+  playStatCountedKey = ''
+}
+
+function clearPlayStatTick() {
+  playStatLastTickMs = 0
+}
+
+function tickPlayStatSession() {
+  if (!playStatPendingTrack || !audio || audio.paused) {
+    clearPlayStatTick()
+    return
+  }
+  const now = performance.now()
+  if (playStatLastTickMs > 0) {
+    const dt = (now - playStatLastTickMs) / 1000
+    // 忽略过大间隔（切后台休眠等），只累计真实连播片段
+    if (dt > 0 && dt < 2.5) playStatAccumSec += dt
+  }
+  playStatLastTickMs = now
+  if (playStatAccumSec < PLAY_STAT_MIN_SEC) return
+  const key = getTrackKey(playStatPendingTrack, playStatPendingTrack.source)
+  if (!key || playStatCountedKey === key) return
+  playStatCountedKey = key
+  try {
+    recordPlayStat(playStatPendingTrack)
+  } catch {}
+}
 
 const LOCAL_SMOOTH_EXTS = new Set([
   'flac', 'wav', 'aiff', 'aif', 'ape', 'dsf', 'dff', 'wv', 'tak',
@@ -1130,6 +1170,8 @@ function bindAudioElementEvents(el) {
     }
     clearPlaybackError()
     isPaused.value = false
+    // 续播时重新开始计时片段（累计秒数保留）
+    playStatLastTickMs = performance.now()
     updateMediaSession()
     syncMediaSessionPlaybackState()
     syncMediaSessionPosition()
@@ -1150,6 +1192,7 @@ function bindAudioElementEvents(el) {
       updateActiveLyric(audio.currentTime)
     }
     syncDurationFromAudio()
+    tickPlayStatSession()
     if ((audio.currentTime || 0) > 0.05 && !audio.paused) {
       clearPlaybackKickWatch()
       endPlaybackBuffer()
@@ -1184,6 +1227,7 @@ function bindAudioElementEvents(el) {
   })
   el.addEventListener('pause', () => {
     if (audio !== el) return
+    clearPlayStatTick()
     if (isPaused.value) {
       endPlaybackBuffer()
       syncMediaSessionPlaybackState()
@@ -3261,7 +3305,9 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
     const cleaned = cleanTrackItem(playItem)
     currentPlaying.value = cleaned
     isPaused.value = false
-    recordRecentPlay({ ...cleaned, source: playSource })
+    const recentSnap = { ...cleaned, source: playSource }
+    recordRecentPlay(recentSnap)
+    beginPlayStatSession(recentSnap)
     setCoverUrl(playItem.picUrl || playItem.img || '')
     fetchCover(playItem, playSource)
     ensureLyricsForTrack(playItem, playSource, getTrackKey(playItem, playSource))
@@ -3316,7 +3362,9 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0 }
           applyDurationFallback(item)
           currentPlaying.value = cleanTrackItem(enrichedItem)
           isPaused.value = false
-          recordRecentPlay({ ...currentPlaying.value, source })
+          const recentSnap = { ...currentPlaying.value, source }
+          recordRecentPlay(recentSnap)
+          beginPlayStatSession(recentSnap)
           setCoverUrl(item.picUrl || item.img || '')
           ensureLyricsForTrack(enrichedItem, source, trackKey)
           if (!coverUrl.value && filePath && item.hasPicture !== false) {

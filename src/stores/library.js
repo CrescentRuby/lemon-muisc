@@ -9,10 +9,14 @@ const FAVORITES_KEY_BASE = 'lemon-library-favorites'
 const FAVORITE_ALBUMS_KEY_BASE = 'lemon-library-favorite-albums'
 const FAVORITE_ARTISTS_KEY_BASE = 'lemon-library-favorite-artists'
 const RECENT_KEY_BASE = 'lemon-library-recent'
+const PLAY_STATS_KEY_BASE = 'lemon-library-play-stats'
 const PLAYLISTS_KEY_BASE = 'lemon-library-playlists'
 const USER_DATA_REV_KEY_BASE = 'lemon-library-user-data-rev'
 const LEGACY_MIGRATED_KEY = 'lemon-library-legacy-migrated-user'
 const RECENT_LIMIT = 200
+const PLAY_STATS_LIMIT = 500
+const PLAY_STATS_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const PLAY_STATS_RECENT_CAP = 200
 const SESSION_TRACKS_KEY_BASE = 'lemon-library-tracks-v1'
 const SESSION_TRACKS_LIMIT = 8000
 const coverVersions = new Map()
@@ -27,6 +31,7 @@ function favoritesKey() { return storageKey(FAVORITES_KEY_BASE) }
 function favoriteAlbumsKey() { return storageKey(FAVORITE_ALBUMS_KEY_BASE) }
 function favoriteArtistsKey() { return storageKey(FAVORITE_ARTISTS_KEY_BASE) }
 function recentKey() { return storageKey(RECENT_KEY_BASE) }
+function playStatsKey() { return storageKey(PLAY_STATS_KEY_BASE) }
 function playlistsKey() { return storageKey(PLAYLISTS_KEY_BASE) }
 function userDataRevKey() { return storageKey(USER_DATA_REV_KEY_BASE) }
 function sessionTracksKey() { return storageKey(SESSION_TRACKS_KEY_BASE) }
@@ -403,18 +408,18 @@ function saveSessionTracks(tracks) {
 /** 从搜索/发现页挑选歌曲加入歌单时设置 */
 export const playlistPickTarget = ref(null)
 
-export const SMART_PLAYLIST_IDS = new Set(['random-start', 'roam', 'recent-added', 'recent-played', 'favorites'])
+export const SMART_PLAYLIST_IDS = new Set(['random-start', 'roam', 'recent-added', 'recent-played', 'play-rank', 'favorites'])
 
-/** 漫游歌单：从音乐库随机抽取的动态列表，播完/切歌时自动续填 */
+/** 漫游歌单：从音乐库按口味/探索抽取的动态列表，播完/切歌时自动续填 */
 export const ROAM_PLAYLIST_ID = 'roam'
 export const ROAM_PLAYLIST_KEY = 'lemon-library-roam-tracks'
-/** 随机抽取时每次追加的曲目数量 */
+/** 漫游每次追加的曲目数量 */
 export const ROAM_PICK_SIZE = 10
 /** 漫游歌单剩余不多于此值时自动续填 */
 export const ROAM_REFILL_THRESHOLD = 3
 
 /** 固定渐变图标样式，不使用歌曲封面 */
-export const GRADIENT_CARD_IDS = new Set(['roam', 'random-start', 'recent-added', 'recent-played'])
+export const GRADIENT_CARD_IDS = new Set(['roam', 'random-start', 'recent-added', 'recent-played', 'play-rank'])
 
 export const SMART_CARDS = [
   {
@@ -441,6 +446,12 @@ export const SMART_CARDS = [
     name: '收藏',
     gradient: 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)',
     icon: '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+  },
+  {
+    id: 'play-rank',
+    name: '听歌排行',
+    gradient: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+    icon: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V8"/></svg>',
   },
   {
     id: 'recent-played',
@@ -510,6 +521,7 @@ function applyLocalUserData({
   favoriteAlbums: favAlbums,
   favoriteArtists: favArtists,
   recentPlays: recent,
+  playStats: stats,
   revision,
 } = {}) {
   if (Array.isArray(playlists)) {
@@ -532,6 +544,10 @@ function applyLocalUserData({
     recentPlays.value = recent
     writeJson(recentKey(), recent)
   }
+  if (Array.isArray(stats)) {
+    playStats.value = normalizePlayStatsList(stats)
+    writeJson(playStatsKey(), playStats.value)
+  }
   if (revision !== undefined) writeLocalRevision(revision)
   bumpPlaylistCardsRevision()
 }
@@ -546,6 +562,7 @@ async function saveUserDataToServer() {
       favoriteAlbums: favoriteAlbums.value,
       favoriteArtists: favoriteArtists.value,
       recentPlays: recentPlays.value,
+      playStats: playStats.value,
       revision,
     })
     return true
@@ -606,6 +623,12 @@ function persistRecent() {
   bumpPlaylistCardsRevision()
 }
 
+function persistPlayStats() {
+  writeJson(playStatsKey(), playStats.value)
+  scheduleUserDataPersist()
+  bumpPlaylistCardsRevision()
+}
+
 let libraryApi = null
 let userDataSyncReady = false
 let skipNextUserDataPersist = false
@@ -622,6 +645,7 @@ function applyRemoteUserData({
   favoriteAlbums: favAlbums,
   favoriteArtists: favArtists,
   recentPlays: recent,
+  playStats: stats,
   revision,
 } = {}) {
   skipNextUserDataPersist = true
@@ -644,6 +668,10 @@ function applyRemoteUserData({
   if (Array.isArray(recent)) {
     recentPlays.value = recent
     writeJson(recentKey(), recent)
+  }
+  if (Array.isArray(stats)) {
+    playStats.value = normalizePlayStatsList(stats)
+    writeJson(playStatsKey(), playStats.value)
   }
   if (revision !== undefined) writeLocalRevision(revision)
   bumpPlaylistCardsRevision()
@@ -677,6 +705,7 @@ function clearInMemoryUserData() {
   favoriteAlbums.value = []
   favoriteArtists.value = []
   recentPlays.value = []
+  playStats.value = []
   roamTracks.value = []
   roamPickPool = []
   playlistPickTarget.value = null
@@ -761,6 +790,7 @@ export async function initLibraryUserData(api, user = null) {
     const serverFavAlbums = data.favoriteAlbums || []
     const serverFavArtists = data.favoriteArtists || []
     const serverRecent = data.recentPlays || []
+    const serverPlayStats = data.playStats || []
     const serverRev = Number(data.revision) || 0
 
     const localPl = readJson(playlistsKey(), []).map(normalizePlaylist)
@@ -768,13 +798,15 @@ export async function initLibraryUserData(api, user = null) {
     const localFavAlbums = readJson(favoriteAlbumsKey(), [])
     const localFavArtists = readJson(favoriteArtistsKey(), [])
     const localRecent = readJson(recentKey(), [])
+    const localPlayStats = normalizePlayStatsList(readJson(playStatsKey(), []))
     const localRev = readLocalRevision()
 
     let needUpload = false
     const hasLocalUserData = hasItems(localPl) || hasItems(localFav) || hasItems(localFavAlbums)
-      || hasItems(localFavArtists) || hasItems(localRecent)
+      || hasItems(localFavArtists) || hasItems(localRecent) || hasItems(localPlayStats)
     const hasServerUserData = serverRev > 0 || hasItems(serverPl) || hasItems(serverFav)
       || hasItems(serverFavAlbums) || hasItems(serverFavArtists) || hasItems(serverRecent)
+      || hasItems(serverPlayStats)
 
     if (localRev > serverRev) {
       applyLocalUserData({
@@ -783,6 +815,7 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: localFavAlbums,
         favoriteArtists: localFavArtists,
         recentPlays: localRecent,
+        playStats: localPlayStats,
         revision: localRev,
       })
       needUpload = true
@@ -793,6 +826,7 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: serverFavAlbums,
         favoriteArtists: serverFavArtists,
         recentPlays: serverRecent,
+        playStats: serverPlayStats,
         revision: serverRev,
       })
     } else if (hasServerUserData) {
@@ -803,6 +837,7 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: serverFavAlbums,
         favoriteArtists: serverFavArtists,
         recentPlays: serverRecent,
+        playStats: serverPlayStats,
         revision: serverRev || localRev,
       })
     } else {
@@ -813,10 +848,13 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: localFavAlbums,
         favoriteArtists: localFavArtists,
         recentPlays: localRecent,
+        playStats: localPlayStats,
         revision: localRev || (hasLocalUserData ? Date.now() : 0),
       })
       needUpload = hasLocalUserData
     }
+
+    ensurePlayStatsSeededFromRecent()
 
     if (needUpload) {
       skipNextUserDataPersist = true
@@ -828,6 +866,8 @@ export async function initLibraryUserData(api, user = null) {
     favoriteAlbums.value = readJson(favoriteAlbumsKey(), [])
     favoriteArtists.value = readJson(favoriteArtistsKey(), [])
     recentPlays.value = readJson(recentKey(), [])
+    playStats.value = normalizePlayStatsList(readJson(playStatsKey(), []))
+    ensurePlayStatsSeededFromRecent()
     roamTracks.value = loadRoamTracks()
   }
   try {
@@ -896,6 +936,8 @@ export const favorites = ref([])
 export const favoriteAlbums = ref([])
 export const favoriteArtists = ref([])
 export const recentPlays = ref([])
+/** 听歌排行：按曲目累计播放次数 + 近 7 天时间戳 */
+export const playStats = ref([])
 export const customPlaylists = ref([])
 /** 漫游歌单：从音乐库动态抽取的本地曲目快照列表（按用户隔离，不上传） */
 export const roamTracks = ref([])
@@ -1051,6 +1093,109 @@ export function toggleFavoriteArtist(artist) {
   return idx < 0
 }
 
+function prunePlayRecentAts(ats = [], now = Date.now()) {
+  const cut = now - PLAY_STATS_WEEK_MS
+  return ats.filter((t) => Number(t) >= cut).slice(-PLAY_STATS_RECENT_CAP)
+}
+
+function normalizePlayStatsList(list = []) {
+  if (!Array.isArray(list)) return []
+  const now = Date.now()
+  const out = []
+  const seen = new Set()
+  for (const row of list) {
+    const key = String(row?.key || '').trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const count = Math.max(0, Number(row.count) || 0)
+    const recentAts = prunePlayRecentAts(
+      Array.isArray(row.recentAts) ? row.recentAts.map(Number).filter(Boolean) : [],
+      now,
+    )
+    out.push({
+      ...row,
+      key,
+      count: Math.max(count, recentAts.length),
+      recentAts,
+      updatedAt: Number(row.updatedAt) || recentAts[recentAts.length - 1] || 0,
+    })
+  }
+  return out.slice(0, PLAY_STATS_LIMIT)
+}
+
+/** 无统计数据时，用最近播放种子（各计 1 次），便于首次看到排行 */
+function ensurePlayStatsSeededFromRecent() {
+  if (playStats.value.length || !recentPlays.value.length) return
+  const now = Date.now()
+  playStats.value = normalizePlayStatsList(
+    recentPlays.value.map((r) => {
+      const at = Number(r.playedAt) || now
+      return {
+        ...r,
+        count: 1,
+        recentAts: at >= now - PLAY_STATS_WEEK_MS ? [at] : [],
+        updatedAt: at,
+      }
+    }),
+  )
+  writePlayStats()
+}
+
+export function getPlayRankEntries(range = 'week') {
+  const now = Date.now()
+  const cut = now - PLAY_STATS_WEEK_MS
+  const rows = []
+  for (const row of playStats.value) {
+    const recentAts = prunePlayRecentAts(row.recentAts || [], now)
+    const weekCount = recentAts.filter((t) => t >= cut).length
+    const playCount = range === 'week' ? weekCount : Math.max(0, Number(row.count) || 0)
+    if (playCount <= 0) continue
+    rows.push({
+      ...row,
+      recentAts,
+      weekCount,
+      playCount,
+    })
+  }
+  rows.sort((a, b) => (
+    b.playCount - a.playCount
+    || (b.updatedAt || 0) - (a.updatedAt || 0)
+    || String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN')
+  ))
+  return rows
+}
+
+/** 听歌排行计数：由播放器在实际听满约 20 秒后调用（短播不计） */
+export function recordPlayStat(track) {
+  const snapshot = trackToSnapshot(track)
+  if (!snapshot) return
+  const now = Date.now()
+  const list = [...playStats.value]
+  const idx = list.findIndex((s) => s.key === snapshot.key)
+  if (idx >= 0) {
+    const prev = list[idx]
+    const recentAts = prunePlayRecentAts([...(prev.recentAts || []), now], now)
+    const next = {
+      ...prev,
+      ...snapshot,
+      count: Math.max(0, Number(prev.count) || 0) + 1,
+      recentAts,
+      updatedAt: now,
+    }
+    list.splice(idx, 1)
+    list.unshift(next)
+  } else {
+    list.unshift({
+      ...snapshot,
+      count: 1,
+      recentAts: [now],
+      updatedAt: now,
+    })
+  }
+  playStats.value = list.slice(0, PLAY_STATS_LIMIT)
+  persistPlayStats()
+}
+
 export function recordRecentPlay(track) {
   const snapshot = trackToSnapshot(track)
   if (!snapshot) return
@@ -1180,6 +1325,13 @@ function buildPlaylistCardsUncached(allTracks, { limit } = {}) {
     let tracks = []
     if (card.id === 'recent-added') tracks = recentAdded
     else if (card.id === 'recent-played') tracks = resolveTracksByKeys(recentPlays.value.map(r => r.key), allTracks, recentPlays.value)
+    else if (card.id === 'play-rank') {
+      tracks = getPlayRankEntries('week').map((row) => {
+        const resolved = resolveTracksByKeys([row.key], allTracks, [row])[0]
+        const base = resolved || snapshotToPlayTrack(row) || row
+        return { ...base, key: row.key, playCount: row.playCount }
+      })
+    }
     else if (card.id === 'favorites') tracks = resolveTracksByKeys(favorites.value.map(f => f.key), allTracks, favorites.value)
     else if (card.id === 'roam') tracks = resolveRoamTracks(allTracks)
     // random-start 为入口卡，无固定曲目
@@ -1227,6 +1379,7 @@ export function buildPlaylistCards(allTracks, { limit } = {}) {
     tracks: allTracks,
     favorites: favorites.value,
     recentPlays: recentPlays.value,
+    playStats: playStats.value,
     playlists: customPlaylists.value,
     roamTracks: roamTracks.value,
     limit: limit || 0,
@@ -1237,6 +1390,7 @@ export function buildPlaylistCards(allTracks, { limit } = {}) {
       prev.tracks === state.tracks
       && prev.favorites === state.favorites
       && prev.recentPlays === state.recentPlays
+      && prev.playStats === state.playStats
       && prev.playlists === state.playlists
       && prev.roamTracks === state.roamTracks
       && prev.limit === state.limit
@@ -1265,6 +1419,9 @@ export function rebuildPlaylistCardsLocal(existingCards = [], { limit } = {}) {
   for (const r of recentPlays.value) {
     if (r?.key && !byKey.has(r.key)) byKey.set(r.key, r)
   }
+  for (const s of playStats.value) {
+    if (s?.key && !byKey.has(s.key)) byKey.set(s.key, s)
+  }
   return buildPlaylistCards([...byKey.values()], { limit })
 }
 
@@ -1275,7 +1432,7 @@ export const PLAYLIST_SORT_OPTIONS = [
   { id: 'created', label: '创建时间' },
 ]
 
-const SMART_CARD_ORDER = ['random-start', 'roam', 'recent-added', 'favorites', 'recent-played']
+const SMART_CARD_ORDER = ['random-start', 'roam', 'recent-added', 'favorites', 'play-rank', 'recent-played']
 
 function pinSmartPlaylistCards(cards) {
   const smartMap = new Map(cards.filter(c => c.isSmart).map(c => [c.id, c]))
@@ -1922,7 +2079,7 @@ export function setRoamPickPool(tracks) {
 }
 
 /**
- * 确保有足够曲目可供随机抽取；分页曲库时按需从服务端拉取一批。
+ * 确保有足够曲目可供漫游抽取；分页曲库时按需从服务端拉取一批。
  * @returns {Promise<object[]>}
  */
 export async function ensureRoamPickPool(api, { min = 40, max = 800 } = {}) {
@@ -1942,22 +2099,113 @@ export async function ensureRoamPickPool(api, { min = 40, max = 800 } = {}) {
   return roamPickPool
 }
 
-/** 从音乐库随机抽取 n 首（不重复），返回曲目列表 */
+function roamGenreTags(t) {
+  return String(t?.genre || '').split(/[/;；、,，|]/).map((s) => s.trim().toLowerCase()).filter(Boolean)
+}
+
+function roamArtistTokens(t) {
+  return splitArtists(t?.singer || t?.artist || '')
+    .map((a) => String(a || '').trim().toLowerCase())
+    .filter(Boolean)
+}
+
+/** 漫游口味：收藏 + 听歌排行靠前 + 最近播放 */
+function collectRoamTaste() {
+  const artists = new Set()
+  const genres = new Set()
+  const likedKeys = new Set()
+  const heardKeys = new Set()
+  const recentBlock = new Set()
+
+  const absorb = (row, { like = false, recent = false } = {}) => {
+    if (!row) return
+    const k = getLibraryTrackKey(row) || row.key || ''
+    if (k) {
+      heardKeys.add(k)
+      if (like) likedKeys.add(k)
+      if (recent) recentBlock.add(k)
+    }
+    for (const a of roamArtistTokens(row)) artists.add(a)
+    for (const g of roamGenreTags(row)) genres.add(g)
+  }
+
+  for (const s of favorites.value || []) absorb(s, { like: true })
+  const ranked = [...(playStats.value || [])]
+    .filter((s) => (Number(s.count) || 0) > 0 || (s.recentAts || []).length)
+    .sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0))
+  for (const s of ranked.slice(0, 80)) absorb(s, { like: true })
+  for (const s of (recentPlays.value || []).slice(0, 40)) absorb(s, { like: false, recent: true })
+
+  return { artists, genres, likedKeys, heardKeys, recentBlock }
+}
+
+function matchesRoamTaste(t, taste) {
+  const k = getLibraryTrackKey(t) || t?.key || ''
+  if (k && taste.likedKeys.has(k)) return true
+  for (const a of roamArtistTokens(t)) {
+    if (taste.artists.has(a)) return true
+  }
+  for (const g of roamGenreTags(t)) {
+    if (taste.genres.has(g)) return true
+  }
+  return false
+}
+
+function shufflePickRoam(list, n) {
+  if (!list.length || n <= 0) return []
+  const arr = list.slice()
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr.slice(0, Math.min(n, arr.length))
+}
+
+/**
+ * 从音乐库抽 n 首：一半口味（喜欢/常听），一半新歌探索（避开刚听过）。
+ */
 export function randomPickLibraryTracks(count = ROAM_PICK_SIZE, poolOverride = null) {
   const base = poolOverride
     || (roamPickPool.length ? roamPickPool : libraryTracks.value)
-  const pool = base.filter(t => t?.filePath || t?.localPath || t?.key)
+  const pool = base.filter((t) => t?.filePath || t?.localPath || t?.key)
   if (!pool.length) return []
   const n = Math.min(count, pool.length)
-  const picked = []
-  const used = new Set()
-  while (picked.length < n) {
-    const idx = Math.floor(Math.random() * pool.length)
-    if (used.has(idx)) continue
-    used.add(idx)
-    picked.push(enrichLocalCover(pool[idx]))
+  const taste = collectRoamTaste()
+  const tasteHalf = Math.ceil(n / 2)
+  const exploreHalf = n - tasteHalf
+
+  const tastePool = pool.filter((t) => {
+    const k = getLibraryTrackKey(t) || t.key || ''
+    return matchesRoamTaste(t, taste) && !taste.recentBlock.has(k)
+  })
+  const tasteBase = tastePool.length >= Math.min(2, tasteHalf)
+    ? tastePool
+    : pool.filter((t) => matchesRoamTaste(t, taste))
+  const tastePick = shufflePickRoam(tasteBase, Math.min(tasteHalf, tasteBase.length))
+
+  const used = new Set(tastePick.map((t) => getLibraryTrackKey(t) || t.key || ''))
+  const explorePool = pool.filter((t) => {
+    const k = getLibraryTrackKey(t) || t.key || ''
+    if (!k || used.has(k) || taste.recentBlock.has(k) || taste.likedKeys.has(k)) return false
+    return true
+  })
+  const fresh = explorePool.filter((t) => !taste.heardKeys.has(getLibraryTrackKey(t) || t.key || ''))
+  const exploreBase = fresh.length >= Math.min(2, exploreHalf) ? fresh : explorePool
+  let explorePick = shufflePickRoam(exploreBase, Math.min(exploreHalf, exploreBase.length))
+
+  let mixed = [...tastePick, ...explorePick]
+  if (mixed.length < n) {
+    const used2 = new Set(mixed.map((t) => getLibraryTrackKey(t) || t.key || ''))
+    const rest = shufflePickRoam(
+      pool.filter((t) => {
+        const k = getLibraryTrackKey(t) || t.key || ''
+        return k && !used2.has(k)
+      }),
+      n - mixed.length,
+    )
+    mixed = [...mixed, ...rest]
   }
-  return picked
+  return shufflePickRoam(mixed, n).map((t) => enrichLocalCover(t))
 }
 
 /** 替换整份漫游歌单（漫游播放入口使用） */
@@ -2075,7 +2323,7 @@ function localRefMatchesRemoved(entry, removed, removedNorm) {
  */
 export function pruneLocalPlayRefs(filePaths) {
   const raw = (filePaths || []).filter(Boolean).map(String)
-  if (!raw.length) return { favorites: 0, recent: 0, roam: 0, playlists: 0 }
+  if (!raw.length) return { favorites: 0, recent: 0, playStats: 0, roam: 0, playlists: 0 }
   const removed = new Set(raw)
   const removedNorm = new Set(raw.map(normalizeLocalPathKey))
   const goneKeys = new Set()
@@ -2108,6 +2356,19 @@ export function pruneLocalPlayRefs(filePaths) {
   if (recentN) {
     recentPlays.value = nextRecent
     persistRecent()
+  }
+
+  let statsN = 0
+  const nextStats = playStats.value.filter((s) => {
+    if (localRefMatchesRemoved(s, removed, removedNorm) || goneKeys.has(String(s.key || ''))) {
+      statsN += 1
+      return false
+    }
+    return true
+  })
+  if (statsN) {
+    playStats.value = nextStats
+    persistPlayStats()
   }
 
   let roamN = 0
@@ -2150,7 +2411,7 @@ export function pruneLocalPlayRefs(filePaths) {
     persistPlaylists()
   }
 
-  return { favorites: favN, recent: recentN, roam: roamN, playlists: plN }
+  return { favorites: favN, recent: recentN, playStats: statsN, roam: roamN, playlists: plN }
 }
 
 export function removeLibraryTracks(filePaths) {

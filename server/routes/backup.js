@@ -41,6 +41,7 @@ backupRouter.get('/export', (req, res) => {
         favoriteAlbums: userData.favoriteAlbums || [],
         favoriteArtists: userData.favoriteArtists || [],
         recentPlays: userData.recentPlays || [],
+        playStats: userData.playStats || [],
         settings,
       },
     }
@@ -64,9 +65,10 @@ backupRouter.post('/import', (req, res) => {
     const favoriteAlbums = Array.isArray(data.favoriteAlbums) ? data.favoriteAlbums : null
     const favoriteArtists = Array.isArray(data.favoriteArtists) ? data.favoriteArtists : null
     const recentPlays = Array.isArray(data.recentPlays) ? data.recentPlays : null
+    const playStats = Array.isArray(data.playStats) ? data.playStats : null
     const settingsIn = data.settings && typeof data.settings === 'object' ? data.settings : {}
 
-    if (!playlists && !favorites && !favoriteAlbums && !favoriteArtists && !recentPlays && !Object.keys(settingsIn).length) {
+    if (!playlists && !favorites && !favoriteAlbums && !favoriteArtists && !recentPlays && !playStats && !Object.keys(settingsIn).length) {
       return res.status(400).json({ error: '备份中没有可导入的数据' })
     }
 
@@ -78,6 +80,7 @@ backupRouter.post('/import', (req, res) => {
     let nextFavoriteAlbums = current.favoriteAlbums
     let nextFavoriteArtists = current.favoriteArtists
     let nextRecent = current.recentPlays
+    let nextPlayStats = current.playStats
 
     if (playlists) {
       if (mode === 'merge') {
@@ -102,6 +105,27 @@ backupRouter.post('/import', (req, res) => {
     if (recentPlays) {
       nextRecent = mode === 'replace' ? recentPlays : [...recentPlays, ...(current.recentPlays || [])].slice(0, 200)
     }
+    if (playStats) {
+      if (mode === 'replace') nextPlayStats = playStats
+      else {
+        const byKey = new Map((current.playStats || []).map((s) => [String(s?.key || ''), s]))
+        for (const s of playStats) {
+          const key = String(s?.key || '')
+          if (!key) continue
+          const prev = byKey.get(key)
+          if (!prev) byKey.set(key, s)
+          else {
+            byKey.set(key, {
+              ...prev,
+              ...s,
+              count: Math.max(Number(prev.count) || 0, Number(s.count) || 0),
+              recentAts: [...new Set([...(prev.recentAts || []), ...(s.recentAts || [])])].slice(-200),
+            })
+          }
+        }
+        nextPlayStats = [...byKey.values()].slice(0, 500)
+      }
+    }
     if (favoriteAlbums) {
       nextFavoriteAlbums = mode === 'merge'
         ? [...new Map([...(current.favoriteAlbums || []), ...favoriteAlbums].map((a) => [String(a?.id || ''), a])).values()].filter((a) => a?.id)
@@ -119,6 +143,7 @@ backupRouter.post('/import', (req, res) => {
       favoriteAlbums: nextFavoriteAlbums,
       favoriteArtists: nextFavoriteArtists,
       recentPlays: nextRecent,
+      playStats: nextPlayStats,
       revision: (current.revision || 0) + 1,
     })
 
@@ -137,6 +162,7 @@ backupRouter.post('/import', (req, res) => {
         favoriteAlbums: favoriteAlbums?.length || 0,
         favoriteArtists: favoriteArtists?.length || 0,
         recentPlays: recentPlays?.length || 0,
+        playStats: playStats?.length || 0,
         settings: Object.keys(toSet).length,
         mode,
       },
