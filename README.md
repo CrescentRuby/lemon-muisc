@@ -3,19 +3,30 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/jia070310/lemon-muisc)](https://github.com/jia070310/lemon-muisc/releases)
 
-面向飞牛 NAS、Docker 服务器与自托管环境的 **Web 音乐工具**：多平台搜索、歌单发现、在线试听、批量下载、本地标签管理。兼容落雪音乐（LX Music）自定义音源脚本，在浏览器中即可完成「找歌 → 试听 → 下载 → 整理」全流程。基于落雪音乐修改
+面向飞牛 NAS、Docker 与自托管的 **Web 音乐工具**：多平台搜歌试听、高品质批量下载、本地音乐库与标签整理。兼容落雪（LX Music）自定义音源，浏览器内完成「找歌 → 试听 → 下载 → 整理」。基于落雪音乐修改。
 
-当前版本：**v1.2.17.1** · 开源协议：**[MIT](LICENSE)**  
+当前版本：**v1.2.17.3** · 开源协议：**[MIT](LICENSE)**  
 飞牛应用中心显示名：**柠檬音乐**（浏览器标题仍为「柠檬音乐下载」）  
 仓库：[https://github.com/jia070310/lemon-muisc](https://github.com/jia070310/lemon-muisc)
 
 - **飞牛 FPK**：独立原生应用，运行时使用应用中心 **Node.js v22**（有系统证书时自动 HTTPS）
 - **Docker / 服务器**：[docs/docker.md](docs/docker.md)（HTTPS 需自行挂载证书，与飞牛不同）
+- **上架介绍文案**：[docs/store-app-intro.md](docs/store-app-intro.md)
 
 **开放 API（第三方 / APP 客户端）**：[docs/open-api.md](docs/open-api.md) · 本机文档 `http://<主机>:7983/api/docs` · [OpenAPI](docs/openapi.yaml)
 
--QQ 互动群「飞牛柠檬🍋muisc」（群号 1126326017）
-- ![群](docs/screenshots/QQ195632.png)
+QQ 互动群「飞牛柠檬🍋muisc」（群号 1126326017）  
+![群](docs/screenshots/QQ195632.png)
+
+### 界面一览
+
+| 每日推荐 | 多平台搜索 | 文件管理 |
+|----------|------------|----------|
+| ![每日推荐](docs/screenshots/intro-daily-mix-v1.2.17.png) | ![搜索](docs/screenshots/intro-search-v1.2.17.png) | ![文件管理](docs/screenshots/intro-file-manager-v1.2.17.png) |
+
+| 全屏歌词 | 风格样式 |
+|----------|----------|
+| ![全屏歌词](docs/screenshots/intro-player-lyrics-v1.2.17.png) | ![风格样式](docs/screenshots/intro-appearance-v1.2.17.png) |
 
 
 ### v1.2.17.1

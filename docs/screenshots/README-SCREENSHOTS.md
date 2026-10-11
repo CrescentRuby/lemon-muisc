@@ -1,8 +1,20 @@
-# README / 飞牛帖配图说明（v1.2.12）
+# README / 飞牛帖配图说明
 
-发帖或更新 README 时，优先使用下列实机图（按新人阅读顺序：发现本版 → 下载 → 标签 → 其它）。
+发帖、README 或应用中心介绍时，优先使用下列实机图。
 
-## 当前保留
+## 应用介绍主图（v1.2.17，上架优先）
+
+| 文件 | 用途 |
+|------|------|
+| `intro-daily-mix-v1.2.17.png` | 每日推荐 / 音乐库首页 |
+| `intro-search-v1.2.17.png` | 多平台搜索与音质选择 |
+| `intro-file-manager-v1.2.17.png` | 文件管理 · 标签编辑 |
+| `intro-player-lyrics-v1.2.17.png` | 全屏播放与逐字歌词 |
+| `intro-appearance-v1.2.17.png` | 风格样式 · 明暗与配色 |
+
+完整文案见 [docs/store-app-intro.md](../store-app-intro.md)。
+
+## 其它保留
 
 | 文件 | 用途 |
 |------|------|
