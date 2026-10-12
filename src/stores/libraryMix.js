@@ -211,17 +211,16 @@ async function fetchExtraPool() {
   const extra = []
   try {
     if (!api?.library?.tracks) return extra
+    // 内存里已有足够曲目时不再额外翻页，避免首进音乐库打 4×80 大请求
+    if ((libraryTracks.value || []).length >= 60) return extra
     const seen = new Set(libraryTracks.value.map(trackKey).filter(Boolean))
-    for (let page = 1; page <= 4; page++) {
-      const res = await api.library.tracks({ page, limit: 80, sort: 'mtime' })
-      const items = (res.data || []).map(fileToLibraryTrack)
-      for (const t of items) {
-        const k = trackKey(t)
-        if (!k || seen.has(k)) continue
-        seen.add(k)
-        extra.push(t)
-      }
-      if (items.length < 80) break
+    const res = await api.library.tracks({ page: 1, limit: 60, sort: 'mtime' })
+    const items = (res.data || []).map(fileToLibraryTrack)
+    for (const t of items) {
+      const k = trackKey(t)
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      extra.push(t)
     }
   } catch {}
   return extra

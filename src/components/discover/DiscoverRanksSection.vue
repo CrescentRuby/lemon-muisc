@@ -9,7 +9,10 @@
       <DiscoverSectionSkeleton variant="ranks" />
     </div>
     <div v-else-if="unsupported" class="section-state">当前平台暂不支持排行榜</div>
-    <div v-else-if="error && !list.length" class="section-state error">{{ error }}</div>
+    <div v-else-if="error && !list.length" class="section-state error">
+      <p>{{ error }}</p>
+      <button type="button" class="btn-ghost btn-sm section-retry" @click="$emit('retry')">重试</button>
+    </div>
     <div v-else-if="!list.length" class="section-state">暂无排行榜</div>
     <div v-else class="rank-list">
       <button
@@ -57,7 +60,7 @@ const props = defineProps({
   unsupported: Boolean,
   limit: { type: Number, default: 8 },
 })
-defineEmits(['open', 'more'])
+defineEmits(['open', 'more', 'retry'])
 
 const visibleList = computed(() => props.list.slice(0, props.limit))
 
@@ -132,7 +135,8 @@ function nameInitial(item) {
   padding: 24px 8px;
   font-size: 13px;
 }
-.section-state.error { color: var(--error); }
+.section-state.error { color: var(--error); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.section-retry { margin-top: 2px; }
 
 .rank-list {
   display: flex;

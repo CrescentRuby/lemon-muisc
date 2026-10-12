@@ -4,7 +4,12 @@ import path from 'path'
 import { readMeta, readMetaLite, batchWriteMeta, writeMeta, readEmbeddedCover } from '../meta.js'
 import { matchByFilename, matchByArtistTitle, fetchMatchMeta, normalizeTagSource } from '../utils/tagMatch.js'
 import { parseFilename } from '../utils/filenameParse.js'
-import { fetchPicBuffer } from '../utils/fetchPic.js'
+import { detectImageMime, fetchPicBuffer } from '../utils/fetchPic.js'
+import {
+  buildLocalCoverCacheKey,
+  getCachedCover,
+  setCachedCover,
+} from '../utils/coverCache.js'
 import { getMusicPaths, getMusicPathsForUser, addMusicPath, removeMusicPath, isUnderConfiguredMusicDir, isAllowedMediaPath } from '../utils/filePaths.js'
 import { listAudioFiles, listDirEntries, probeDir } from '../utils/audioScan.js'
 import { mapWithConcurrency } from '../utils/asyncPool.js'
@@ -114,10 +119,23 @@ tagRouter.get('/cover', async (req, res) => {
     if (!filePath || !isAllowedMediaPath(filePath, { userId: req.user?.id })) {
       return res.status(403).json({ error: '无权访问该文件' })
     }
+    let mtimeMs = 0
+    try { mtimeMs = fs.statSync(filePath).mtimeMs || 0 } catch {}
+    const cacheKey = buildLocalCoverCacheKey(filePath, mtimeMs)
+    const cached = getCachedCover(cacheKey)
+    if (cached?.buffer?.length) {
+      res.set('Cache-Control', 'private, max-age=604800')
+      res.set('X-Cover-Cache', 'HIT')
+      res.type(cached.mime || detectImageMime(cached.buffer))
+      return res.send(cached.buffer)
+    }
     const cover = await readEmbeddedCover(filePath)
     if (!cover?.buffer?.length) return res.status(404).end()
-    res.set('Cache-Control', 'private, max-age=86400')
-    res.type(cover.mime)
+    const mime = cover.mime || detectImageMime(cover.buffer)
+    setCachedCover(cacheKey, cover.buffer, mime)
+    res.set('Cache-Control', 'private, max-age=604800')
+    res.set('X-Cover-Cache', 'MISS')
+    res.type(mime)
     res.send(cover.buffer)
   } catch (e) {
     res.status(500).json({ error: e.message })

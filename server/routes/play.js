@@ -8,6 +8,11 @@ import { buildMusicInfo } from '../utils/musicInfo.js'
 import { fetchTrackLyric, fetchTrackCover } from '../utils/trackMeta.js'
 import { resolveCoverUrl } from '../utils/cover.js'
 import { detectImageMime, fetchPicBuffer } from '../utils/fetchPic.js'
+import {
+  buildRemoteCoverCacheKey,
+  getCachedCover,
+  setCachedCover,
+} from '../utils/coverCache.js'
 import { isAllowedMediaPath, mapToContainerPath } from '../utils/filePaths.js'
 import { formatUserError } from '../utils/userError.js'
 import { logRuntime } from '../utils/runtimeLog.js'
@@ -651,15 +656,27 @@ playRouter.get('/cover-img', async (req, res) => {
   if (!url || typeof url !== 'string' || !isAllowedRemoteUrl(url)) {
     return res.status(400).json({ error: '无效封面链接' })
   }
+  const size = Math.min(500, Math.max(0, Number.parseInt(req.query.w, 10) || 0))
+  const cacheKey = buildRemoteCoverCacheKey(url, size)
   try {
+    const cached = getCachedCover(cacheKey)
+    if (cached?.buffer?.length) {
+      res.setHeader('Content-Type', cached.mime || detectImageMime(cached.buffer))
+      res.setHeader('Cache-Control', 'private, max-age=604800')
+      res.setHeader('X-Cover-Cache', 'HIT')
+      return res.send(cached.buffer)
+    }
     const buf = await playMetaLimiter(() => withTimeout(
-      fetchPicBuffer(url),
+      fetchPicBuffer(url, { size }),
       PLAY_META_TIMEOUT_MS,
       '获取封面超时，请稍后重试',
     ))
     if (!buf?.length) return res.status(404).json({ error: '封面不可用' })
-    res.setHeader('Content-Type', detectImageMime(buf))
-    res.setHeader('Cache-Control', 'private, max-age=86400')
+    const mime = detectImageMime(buf)
+    setCachedCover(cacheKey, buf, mime)
+    res.setHeader('Content-Type', mime)
+    res.setHeader('Cache-Control', 'private, max-age=604800')
+    res.setHeader('X-Cover-Cache', 'MISS')
     res.send(buf)
   } catch {
     if (!res.headersSent) res.status(502).json({ error: '封面加载失败' })

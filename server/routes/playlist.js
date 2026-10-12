@@ -4,12 +4,17 @@ import { getDisplaySources } from '../utils/displaySources.js'
 import { formatUserError } from '../utils/userError.js'
 import { createLimiter, withTimeout } from '../utils/asyncLimit.js'
 import { buildPlaylistCacheKey, getCachedPlaylist, getOrFetchPlaylist } from '../utils/playlistCache.js'
+import {
+  buildDiscoverFeedKey,
+  getOrFetchDiscoverFeed,
+} from '../utils/discoverFeedCache.js'
 
 export const playlistRouter = Router()
 
 const availableSources = (req) => getDisplaySources(req.user?.id)
 const playlistLimiter = createLimiter(3)
-const RECOMMEND_TIMEOUT_MS = 20000
+/** 与前端发现页超时对齐 */
+const RECOMMEND_TIMEOUT_MS = 18000
 const PLAYLIST_TIMEOUT_MS = 120000
 
 playlistRouter.get('/sources', (req, res) => {
@@ -24,12 +29,18 @@ playlistRouter.get('/recommend', async (req, res) => {
     }
     const pageNum = Math.max(1, Number(page) || 1)
     const limitNum = Math.min(60, Math.max(10, Number(limit) || 30))
-    const data = await playlistLimiter(() => withTimeout(
+    const cacheKey = buildDiscoverFeedKey(['recommend', source, sort, pageNum, limitNum])
+    const result = await getOrFetchDiscoverFeed(cacheKey, () => playlistLimiter(() => withTimeout(
       fetchRecommendPlaylists(source, String(sort), pageNum, limitNum),
       RECOMMEND_TIMEOUT_MS,
       '获取推荐歌单超时，请稍后重试',
-    ))
-    res.json({ ok: true, data })
+    )))
+    res.json({
+      ok: true,
+      data: result.data,
+      cached: result.cached,
+      stale: result.stale,
+    })
   } catch (e) {
     res.status(500).json({ error: formatUserError(e, '获取推荐歌单失败，请稍后重试') })
   }

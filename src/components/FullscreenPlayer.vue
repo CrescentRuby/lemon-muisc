@@ -54,6 +54,7 @@
                 :src="coverUrl"
                 :round="coverStyle === 'disc'"
                 :spin="coverStyle === 'disc' && !isPaused && !!currentPlaying"
+                :size="0"
                 slow
                 loading="eager"
                 @error="onCoverError"

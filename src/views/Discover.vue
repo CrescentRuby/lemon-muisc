@@ -47,6 +47,7 @@
         @open="openRecommendPlaylist"
         @more="goPlaylistsMore"
         @need-more="loadRecommendMore"
+        @retry="loadRecommend"
       />
       <DiscoverNewSongsSection
         :list="discoverState.newSongs"
@@ -59,6 +60,7 @@
         @play="playHomeSong"
         @play-all="playHomeSongs"
         @more="goNewSongsMore"
+        @retry="loadNewSongs"
       />
       <DiscoverNewAlbumsSection
         :list="discoverState.newAlbums"
@@ -70,6 +72,7 @@
         @update:region="changeAlbumRegion"
         @open="openHomeAlbum"
         @more="goNewAlbumsMore"
+        @retry="loadNewAlbums"
       />
       <DiscoverRanksSection
         :list="discoverState.ranks"
@@ -78,6 +81,7 @@
         :unsupported="discoverState.ranksUnsupported"
         @open="openHomeRank"
         @more="goRanksMore"
+        @retry="loadRanks"
       />
     </div>
 
@@ -706,7 +710,7 @@ async function loadRecommend(opts = {}) {
   discoverState.recommendHasMore = false
   discoverState.playlistsError = ''
   try {
-    const res = await api.playlist.recommend(source, sort, 1, 30, { signal })
+    const res = await api.playlist.recommend(source, sort, 1, 20, { signal })
     if (seq !== discoverSeq || source !== discoverState.activeSource) return
     applyRecommendPage(res.data, { append: false })
   } catch (e) {
@@ -758,7 +762,7 @@ async function loadNewSongs(opts = {}) {
   discoverState.newSongsError = ''
   discoverState.newSongsUnsupported = false
   try {
-    const res = await api.discover.newSongs(source, region, 1, 54, { signal: opts.signal })
+    const res = await api.discover.newSongs(source, region, 1, 27, { signal: opts.signal })
     if (source !== discoverState.activeSource) return
     const data = res.data || {}
     discoverState.newSongs = data.list || []
@@ -783,7 +787,7 @@ async function loadNewAlbums(opts = {}) {
   discoverState.newAlbumsError = ''
   discoverState.newAlbumsUnsupported = false
   try {
-    const res = await api.discover.newAlbums(source, region, 1, 30, { signal: opts.signal })
+    const res = await api.discover.newAlbums(source, region, 1, 20, { signal: opts.signal })
     if (source !== discoverState.activeSource) return
     const data = res.data || {}
     discoverState.newAlbums = data.list || []

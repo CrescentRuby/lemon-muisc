@@ -32,7 +32,7 @@
 
         <div class="song-info-body">
           <div class="song-info-cover">
-            <CoverArt :src="cover" />
+            <CoverArt :src="cover" :size="0" />
           </div>
           <div class="song-info-main">
             <div class="song-info-name" :title="title">{{ title || '未知歌曲' }}</div>
@@ -79,7 +79,7 @@
 
     <div class="song-info-body">
       <div class="song-info-cover">
-        <CoverArt :src="cover" />
+        <CoverArt :src="cover" :size="0" />
       </div>
       <div class="song-info-main">
         <div class="song-info-name" :title="title">{{ title || '未知歌曲' }}</div>

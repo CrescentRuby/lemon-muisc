@@ -783,21 +783,29 @@ onMounted(() => {
   }
   updatePlaylistCols()
   loadLibrarySongColumns(api).catch(() => {})
+  // 先出列表/预览，扫盘与每日推荐稍后后台跑，避免刷新首进被 scan-start 堵住
   loadScanSummary()
   loadBrowsePreviews()
   loadSongPage()
-  refreshLibraryMix().catch(() => {})
-  scanLibrary(api, {
-    resync: true,
-    onError: (msg) => showToast(msg, 'error'),
-    onComplete: (result, meta) => {
-      loadScanSummary()
-      loadBrowsePreviews()
-      loadSongPage()
-      refreshLibraryMix().catch(() => {})
-      notifyScanComplete(result, meta)
-    },
-  }).catch(() => {})
+  const deferHeavy = () => {
+    refreshLibraryMix().catch(() => {})
+    scanLibrary(api, {
+      resync: true,
+      onError: (msg) => showToast(msg, 'error'),
+      onComplete: (result, meta) => {
+        loadScanSummary()
+        loadBrowsePreviews()
+        loadSongPage()
+        refreshLibraryMix().catch(() => {})
+        notifyScanComplete(result, meta)
+      },
+    }).catch(() => {})
+  }
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(deferHeavy, { timeout: 1200 })
+  } else {
+    setTimeout(deferHeavy, 400)
+  }
 })
 
 onActivated(() => {

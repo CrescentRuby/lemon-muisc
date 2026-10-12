@@ -25,12 +25,14 @@ const props = defineProps({
   spin: { type: Boolean, default: false },
   slow: { type: Boolean, default: false },
   loading: { type: String, default: 'lazy' },
+  /** 列表缩略图边长；0 表示原图策略 */
+  size: { type: Number, default: 240 },
 })
 
 const emit = defineEmits(['error'])
 const broken = ref(false)
 
-const resolvedSrc = computed(() => toPlayableCoverUrl(props.src))
+const resolvedSrc = computed(() => toPlayableCoverUrl(props.src, { size: props.size || 0 }))
 const showPhoto = computed(() => {
   const url = resolvedSrc.value
   return Boolean(url) && !broken.value && !isAppIconUrl(url)

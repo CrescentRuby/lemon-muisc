@@ -1,12 +1,14 @@
-export async function fetchPicBuffer(picUrl) {
+export async function fetchPicBuffer(picUrl, { size = 0 } = {}) {
   if (!picUrl || !/^https?:\/\//i.test(picUrl)) return null
 
-  const candidates = expandPicCandidates(picUrl)
+  const prefer = Number(size) > 0 ? Math.min(500, Math.max(120, Number(size))) : 0
+  const candidates = expandPicCandidates(picUrl, prefer)
 
   const { default: needle } = await import('needle')
   for (let url of candidates) {
-    if (url.includes('music.126.net')) {
-      url += `${url.includes('?') ? '&' : '?'}param=500y500`
+    if (url.includes('music.126.net') && !/[?&]param=\d+y\d+/i.test(url)) {
+      const dim = prefer || 500
+      url += `${url.includes('?') ? '&' : '?'}param=${dim}y${dim}`
     }
     try {
       const resp = await needle('get', url, {
@@ -36,16 +38,23 @@ function pickReferer(url) {
   return 'https://y.qq.com/'
 }
 
-function expandPicCandidates(picUrl) {
+function expandPicCandidates(picUrl, preferSize = 0) {
   const list = [picUrl]
+  const size = preferSize || 400
 
   if (/T002R300x300M000/.test(picUrl)) {
-    list.push(picUrl.replace('T002R300x300M000', 'T002R500x500M000'))
+    // 列表用较小图；大图需求再升到 500
+    if (preferSize && preferSize <= 300) {
+      /* keep 300 */
+    } else {
+      list.push(picUrl.replace('T002R300x300M000', 'T002R500x500M000'))
+    }
   }
 
-  // 酷我：120 封面经常为空，升级到 500，并切换镜像域名
+  // 酷我：120 常空；列表优先 240/300，否则 500
   if (/kuwo\.cn\/star\/(albumcover|starheads)\//i.test(picUrl)) {
-    const up = picUrl.replace(/\/120\//, '/500/')
+    const target = preferSize && preferSize <= 300 ? '/240/' : '/500/'
+    const up = picUrl.replace(/\/120\//, target).replace(/\/240\//, preferSize && preferSize <= 300 ? '/240/' : '/500/')
     if (up !== picUrl) list.push(up)
     for (const host of ['img4.kuwo.cn', 'img2.kuwo.cn', 'img1.kuwo.cn', 'img3.kuwo.cn']) {
       const swapped = up.replace(/https?:\/\/img\d\.kuwo\.cn/i, `https://${host}`)
@@ -54,8 +63,8 @@ function expandPicCandidates(picUrl) {
   }
 
   if (/\{size\}/.test(picUrl)) {
-    list.push(picUrl.replace(/\{size\}/g, '400'))
-    list.push(picUrl.replace(/\{size\}/g, '480'))
+    list.push(picUrl.replace(/\{size\}/g, String(size)))
+    if (!preferSize || preferSize > 300) list.push(picUrl.replace(/\{size\}/g, '480'))
   }
 
   return [...new Set(list)]

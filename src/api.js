@@ -274,7 +274,12 @@ export const api = {
         page: String(page),
         limit: String(limit),
       })
-      return request(`/playlist/recommend?${qs}`, options)
+      // 发现首页：约 18s 服务端超时，前端略长；超时不重试，避免骨架空等数分钟
+      return request(`/playlist/recommend?${qs}`, {
+        timeout: 20000,
+        retries: 0,
+        ...options,
+      })
     },
     sources: () => request('/playlist/sources'),
   },
@@ -282,15 +287,27 @@ export const api = {
     newSongs: (source, region = '', page = 1, limit = 27, options = {}) => {
       const qs = new URLSearchParams({ source, page: String(page), limit: String(limit) })
       if (region) qs.set('region', region)
-      return request(`/discover/new-songs?${qs}`, options)
+      return request(`/discover/new-songs?${qs}`, {
+        timeout: 20000,
+        retries: 0,
+        ...options,
+      })
     },
     newAlbums: (source, region = '', page = 1, limit = 20, options = {}) => {
       const qs = new URLSearchParams({ source, page: String(page), limit: String(limit) })
       if (region) qs.set('region', region)
-      return request(`/discover/new-albums?${qs}`, options)
+      return request(`/discover/new-albums?${qs}`, {
+        timeout: 20000,
+        retries: 0,
+        ...options,
+      })
     },
     toplists: (source, options = {}) =>
-      request(`/discover/toplists?source=${encodeURIComponent(source)}`, options),
+      request(`/discover/toplists?source=${encodeURIComponent(source)}`, {
+        timeout: 20000,
+        retries: 0,
+        ...options,
+      }),
     toplist: (source, id, page = 1, limit = 100, options = {}) => {
       const qs = new URLSearchParams({
         source,
@@ -298,7 +315,11 @@ export const api = {
         page: String(page),
         limit: String(limit),
       })
-      return request(`/discover/toplist?${qs}`, options)
+      return request(`/discover/toplist?${qs}`, {
+        timeout: 20000,
+        retries: 0,
+        ...options,
+      })
     },
     regions: (source, kind = 'songs', options = {}) =>
       request(`/discover/regions?source=${encodeURIComponent(source)}&kind=${encodeURIComponent(kind)}`, options),

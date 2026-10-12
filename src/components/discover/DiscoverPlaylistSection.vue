@@ -18,7 +18,10 @@
     <div v-if="loading && !list.length" class="section-skeleton">
       <DiscoverSectionSkeleton variant="playlists" />
     </div>
-    <div v-else-if="error && !list.length" class="section-state error">{{ error }}</div>
+    <div v-else-if="error && !list.length" class="section-state error">
+      <p>{{ error }}</p>
+      <button type="button" class="btn-ghost btn-sm section-retry" @click="$emit('retry')">重试</button>
+    </div>
     <div v-else-if="!list.length" class="section-state">暂无推荐歌单</div>
     <DiscoverSwipeCarousel
       v-else
@@ -65,7 +68,7 @@ const props = defineProps({
   sortOptions: { type: Array, default: () => [] },
   hasMore: Boolean,
 })
-const emit = defineEmits(['open', 'more', 'update:sort', 'need-more'])
+const emit = defineEmits(['open', 'more', 'update:sort', 'need-more', 'retry'])
 
 /** 按网格列数 × 2 行：一屏两行，超出翻页 */
 function calcPageSize() {
@@ -169,7 +172,8 @@ onUnmounted(() => {
   padding: 24px 8px;
   font-size: 13px;
 }
-.section-state.error { color: var(--error); }
+.section-state.error { color: var(--error); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.section-retry { margin-top: 2px; }
 .playlist-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

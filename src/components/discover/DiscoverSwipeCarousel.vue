@@ -82,8 +82,9 @@ const slideStyle = computed(() => ({
 
 function shouldRenderPage(page) {
   const cur = props.modelValue
-  if (Math.abs(page - cur) <= 1) return true
-  if (pendingPage != null && Math.abs(page - pendingPage) <= 1) return true
+  // 仅渲染当前页，避免邻页封面预加载放大首屏流量；滑动中再带上目标页
+  if (page === cur) return true
+  if (pendingPage != null && page === pendingPage) return true
   return false
 }
 

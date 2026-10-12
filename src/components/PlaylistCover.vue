@@ -54,17 +54,9 @@
         :class="`tiles-${Math.min(displayUrls.length, 4)}`"
       >
         <template v-if="displayUrls.length === 1">
-          <img
-            class="mosaic-blur"
-            :src="playableUrls[0]"
-            alt=""
-            loading="lazy"
-            referrerpolicy="no-referrer"
-            draggable="false"
-            aria-hidden="true"
-          />
+          <!-- 单图不再叠加 blur 第二份请求，减少首屏封面流量 -->
           <div class="mosaic-solo">
-            <CoverArt :src="displayUrls[0]" />
+            <CoverArt :src="displayUrls[0]" :size="240" />
           </div>
         </template>
         <template v-else>

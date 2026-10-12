@@ -30,7 +30,10 @@
       <DiscoverSectionSkeleton variant="songs" />
     </div>
     <div v-else-if="unsupported" class="section-state">当前平台暂不支持新歌首发</div>
-    <div v-else-if="error && !list.length" class="section-state error">{{ error }}</div>
+    <div v-else-if="error && !list.length" class="section-state error">
+      <p>{{ error }}</p>
+      <button type="button" class="btn-ghost btn-sm section-retry" @click="$emit('retry')">重试</button>
+    </div>
     <div v-else-if="!list.length" class="section-state">暂无新歌</div>
     <DiscoverSwipeCarousel
       v-else
@@ -72,7 +75,7 @@ const props = defineProps({
   regions: { type: Array, default: () => [] },
   pageSize: { type: Number, default: 9 },
 })
-defineEmits(['play', 'play-all', 'more', 'update:region'])
+defineEmits(['play', 'play-all', 'more', 'update:region', 'retry'])
 
 const pageIndex = ref(0)
 const pageCount = computed(() => Math.max(1, Math.ceil(props.list.length / props.pageSize)))
@@ -164,7 +167,8 @@ watch(pageCount, (n) => {
   padding: 24px 8px;
   font-size: 13px;
 }
-.section-state.error { color: var(--error); }
+.section-state.error { color: var(--error); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.section-retry { margin-top: 2px; }
 .song-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

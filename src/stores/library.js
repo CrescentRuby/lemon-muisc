@@ -318,7 +318,8 @@ export async function loadPlaylistCardsFromServer(api, { limit } = {}) {
 
   const [recentRes, resolved] = await Promise.all([
     fetchLibraryTracksPage(api, { page: 1, limit: 80, sort: 'mtime', replace: false, syncNavBadge: false }),
-    fetchLibraryTracksByPaths(api, [...pathSet].slice(0, 2000)),
+    // 首屏歌单卡只要封面/曲目预览，收紧路径上限，避免一次 by-paths 上千条
+    fetchLibraryTracksByPaths(api, [...pathSet].slice(0, 400)),
   ])
 
   const map = new Map()
