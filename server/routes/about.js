@@ -7,7 +7,7 @@ import { pipeline } from 'stream/promises'
 import { Transform } from 'stream'
 import { compareVersion } from '../utils/version.js'
 import { getAppLogInfo, readLogTail } from '../utils/appPaths.js'
-import { getDownloadSavePath, getSharedDownloadSavePath } from '../utils/filePaths.js'
+import { peekFpkUpdateDir, getFpkUpdateDir } from '../utils/fpkUpdatePath.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { broadcast } from '../ws.js'
 import os from 'os'
@@ -80,7 +80,6 @@ const GITHUB_ASSET_MIRROR_HOSTS = [
 ]
 /** @deprecated 仅用于前端展示示例加速链 */
 const GITHUB_ASSET_MIRROR_PREFIXES = GITHUB_ASSET_MIRROR_HOSTS.map((h) => `https://${h}/`)
-const FPK_UPDATE_SUBDIR = '柠檬音乐更新'
 const MIRROR_PROBE_BYTES = 256 * 1024
 const MIRROR_PROBE_TIMEOUT_MS = 4500
 const MIRROR_PROBE_CONCURRENCY = 12
@@ -444,25 +443,9 @@ function buildInstallHints(version, fpkAssets = []) {
   const ver = String(version || '').replace(/^v/i, '')
   if (!ver) return null
   return {
-    fpkHint: '点「加速保存」将先对各加速节点短测速，再按最快源把 FPK 拉到 NAS「下载目录/柠檬音乐更新」（失败自动换源，最后回落 GitHub 直连）。完成后到飞牛「应用中心」→「手动安装」选择该文件覆盖安装。',
+    fpkHint: '点「加速保存」将先对各加速节点短测速，再按最快源把 FPK 拉到应用配置目录下的 fpk-updates（失败自动换源，最后回落 GitHub 直连）。完成后到飞牛「应用中心」→「手动安装」选择该文件覆盖安装。',
     fpkAssets,
   }
-}
-
-/** FPK 保存目录：下载目录下的「柠檬音乐更新」 */
-export function getFpkUpdateDir(userId = null) {
-  let base = ''
-  try {
-    base = getDownloadSavePath(userId) || getSharedDownloadSavePath() || ''
-  } catch {
-    base = getSharedDownloadSavePath() || ''
-  }
-  if (!base) {
-    throw new Error('尚未配置下载目录，请先在「设置 → 路径」中设置')
-  }
-  const dir = path.join(base, FPK_UPDATE_SUBDIR)
-  fs.mkdirSync(dir, { recursive: true })
-  return dir
 }
 
 function safeFpkFileName(name) {
@@ -488,7 +471,7 @@ function allocateUniqueFpkPath(dir, baseName) {
     }
     n += 1
   }
-  throw new Error('同名安装包过多，请清理「柠檬音乐更新」目录后再试')
+  throw new Error('同名安装包过多，请清理配置目录下的 fpk-updates 后再试')
 }
 
 async function resolveLatestFpkAssets() {
@@ -531,7 +514,7 @@ aboutRouter.get('/', async (_req, res) => {
   }
 
   try {
-    fpkUpdateDir = getFpkUpdateDir()
+    fpkUpdateDir = peekFpkUpdateDir()
   } catch {
     fpkUpdateDir = ''
   }
@@ -596,7 +579,7 @@ aboutRouter.get('/diagnostics', (_req, res) => {
 })
 
 /**
- * 服务端拉取 FPK 到 NAS 下载目录/柠檬音乐更新（异步任务，经 WS / 轮询看进度）
+ * 服务端拉取 FPK 到配置目录/fpk-updates（异步任务，经 WS / 轮询看进度）
  * body: { arch?: 'x86'|'arm', name?: string, mirror?: boolean }
  */
 aboutRouter.post('/download-fpk', requireAdmin, async (req, res) => {
@@ -623,7 +606,7 @@ aboutRouter.post('/download-fpk', requireAdmin, async (req, res) => {
       return res.status(409).json({ error: `正在下载 ${asset.label} 安装包，请稍候`, data: publicFpkJob(existing) })
     }
 
-    const dir = getFpkUpdateDir(userId)
+    const dir = getFpkUpdateDir()
     const { fileName, dest, part } = allocateUniqueFpkPath(dir, asset.name)
 
     const job = {

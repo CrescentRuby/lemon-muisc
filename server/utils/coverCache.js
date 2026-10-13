@@ -4,15 +4,13 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import os from 'os'
 
 const MAX_ENTRIES = 800
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 function cacheRoot() {
-  const base = process.env.DOWNLOAD_PATH
-    || process.env.CONFIG_PATH
-    || path.join(os.tmpdir(), 'lemon-music')
+  // 放系统配置目录（飞牛 @appdata/…/config），勿写入用户音乐/下载目录
+  const base = process.env.CONFIG_PATH || path.join(process.cwd(), 'config')
   const dir = path.join(base, 'cover-cache')
   try {
     fs.mkdirSync(dir, { recursive: true })

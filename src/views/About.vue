@@ -119,113 +119,113 @@
           <p v-if="pwa.installHint" class="pwa-hint">{{ pwa.installHint }}</p>
         </template>
       </section>
-    </div>
 
-    <section class="about-card card ops-card">
-      <div class="ops-head">
-        <h2 class="section-title">排查与日志</h2>
-        <button
-          v-if="isAdminUser"
-          class="btn-ghost btn-sm"
-          type="button"
-          @click="loadServerHealth"
-          :disabled="healthLoading"
-        >
-          {{ healthLoading ? '刷新中…' : '刷新状态' }}
-        </button>
-      </div>
-      <p class="log-path-desc">
-        主日志一般为 <code>app.log</code>，依赖安装看 <code>npm-install.log</code>。
-      </p>
-      <div class="log-path-row">
-        <span class="log-path-label">日志目录</span>
-        <code class="log-path-value" :title="info?.logDir || ''">{{ info?.logDir || (loading ? '检测中…' : '暂不可用') }}</code>
-        <button
-          type="button"
-          class="btn-ghost btn-sm"
-          :disabled="!info?.logDir"
-          @click="copyLogPath('dir')"
-        >
-          {{ logDirCopied ? '已复制' : '复制' }}
-        </button>
-      </div>
-      <div class="log-path-row">
-        <span class="log-path-label">主日志</span>
-        <code class="log-path-value" :title="info?.appLogPath || ''">{{ info?.appLogPath || (loading ? '检测中…' : '暂不可用') }}</code>
-        <button
-          type="button"
-          class="btn-ghost btn-sm"
-          :disabled="!info?.appLogPath"
-          @click="copyLogPath('app')"
-        >
-          {{ appLogCopied ? '已复制' : '复制' }}
-        </button>
-      </div>
-      <p v-if="info && info.logDirExists === false" class="log-path-hint">
-        当前目录尚未创建（本地开发或未写入过日志时常见）。飞牛上启用后一般会出现在 <code>/vol*/@appdata/lemon-music/log</code>。
-      </p>
-
-      <template v-if="isAdminUser">
-        <div class="ops-divider" />
-        <p v-if="serverHealth" class="ops-health-line">
-          已运行 {{ formatUptime(serverHealth.uptime) }} ·
-          内存约 {{ serverHealth.memory.rssMB }} MB ·
-          扫描 {{ serverHealth.scan.running ? '进行中' : '空闲' }} ·
-          下载 {{ serverHealth.downloads?.running || 0 }} 进行中 / {{ serverHealth.downloads?.pending || 0 }} 排队
+      <section class="about-card card ops-card">
+        <div class="ops-head">
+          <h2 class="section-title">排查与日志</h2>
+          <button
+            v-if="isAdminUser"
+            class="btn-ghost btn-sm"
+            type="button"
+            @click="loadServerHealth"
+            :disabled="healthLoading"
+          >
+            {{ healthLoading ? '刷新中…' : '刷新状态' }}
+          </button>
+        </div>
+        <p class="log-path-desc">
+          主日志一般为 <code>app.log</code>，依赖安装看 <code>npm-install.log</code>。
         </p>
-        <p v-else class="log-path-hint">无法获取服务状态，请确认服务已启动后点击刷新。</p>
-        <details v-if="serverHealth?.memoryGuard" class="memory-details">
-          <summary>
-            内存缓存守护
-            <span
-              class="memory-guard-badge"
-              :class="serverHealth.memoryGuard.nearLimit ? 'warn' : 'ok'"
-            >
-              {{ serverHealth.memoryGuard.nearLimit ? '接近清理阈值' : '正常' }}
-            </span>
-          </summary>
-          <dl class="health-meta-list">
-            <div class="health-meta-row">
-              <dt>RSS / 软限制 / 硬限制</dt>
-              <dd>
-                {{ serverHealth.memoryGuard.rssMB }} / {{ serverHealth.memoryGuard.rssSoftLimitMB }} / {{ serverHealth.memoryGuard.rssHardLimitMB }} MB
-              </dd>
-            </div>
-            <div class="health-meta-row">
-              <dt>试听链接缓存</dt>
-              <dd>{{ formatCacheStat(serverHealth.memoryGuard.caches?.playUrl) }}</dd>
-            </div>
-            <div class="health-meta-row">
-              <dt>专辑详情缓存</dt>
-              <dd>{{ formatCacheStat(serverHealth.memoryGuard.caches?.album) }}</dd>
-            </div>
-            <div class="health-meta-row">
-              <dt>歌单解析缓存</dt>
-              <dd>{{ formatCacheStat(serverHealth.memoryGuard.caches?.playlist) }}</dd>
-            </div>
-            <div class="health-meta-row">
-              <dt>自动清理次数</dt>
-              <dd>{{ serverHealth.memoryGuard.trimCount || 0 }} 次</dd>
-            </div>
-            <div class="health-meta-row">
-              <dt>上次清理</dt>
-              <dd>{{ formatHealthTime(serverHealth.memoryGuard.lastTrimAt) }}</dd>
-            </div>
-            <div class="health-meta-row">
-              <dt>上次检查</dt>
-              <dd>{{ formatHealthTime(serverHealth.memoryGuard.lastCheckAt) }}</dd>
-            </div>
-            <div v-if="serverHealth.memoryGuard.lastTrimRssMB" class="health-meta-row">
-              <dt>上次清理时 RSS</dt>
-              <dd>约 {{ serverHealth.memoryGuard.lastTrimRssMB }} MB</dd>
-            </div>
-          </dl>
-          <p class="memory-guard-tip">
-            RSS 超过 {{ serverHealth.memoryGuard.rssSoftLimitMB }} MB 时会自动裁剪试听/专辑/歌单缓存；超过 {{ serverHealth.memoryGuard.rssHardLimitMB }} MB 时清空相关缓存。
+        <div class="log-path-row">
+          <span class="log-path-label">日志目录</span>
+          <code class="log-path-value" :title="info?.logDir || ''">{{ info?.logDir || (loading ? '检测中…' : '暂不可用') }}</code>
+          <button
+            type="button"
+            class="btn-ghost btn-sm"
+            :disabled="!info?.logDir"
+            @click="copyLogPath('dir')"
+          >
+            {{ logDirCopied ? '已复制' : '复制' }}
+          </button>
+        </div>
+        <div class="log-path-row">
+          <span class="log-path-label">主日志</span>
+          <code class="log-path-value" :title="info?.appLogPath || ''">{{ info?.appLogPath || (loading ? '检测中…' : '暂不可用') }}</code>
+          <button
+            type="button"
+            class="btn-ghost btn-sm"
+            :disabled="!info?.appLogPath"
+            @click="copyLogPath('app')"
+          >
+            {{ appLogCopied ? '已复制' : '复制' }}
+          </button>
+        </div>
+        <p v-if="info && info.logDirExists === false" class="log-path-hint">
+          当前目录尚未创建（本地开发或未写入过日志时常见）。飞牛上启用后一般会出现在 <code>/vol*/@appdata/lemon-music/log</code>。
+        </p>
+
+        <template v-if="isAdminUser">
+          <div class="ops-divider" />
+          <p v-if="serverHealth" class="ops-health-line">
+            已运行 {{ formatUptime(serverHealth.uptime) }} ·
+            内存约 {{ serverHealth.memory.rssMB }} MB ·
+            扫描 {{ serverHealth.scan.running ? '进行中' : '空闲' }} ·
+            下载 {{ serverHealth.downloads?.running || 0 }} 进行中 / {{ serverHealth.downloads?.pending || 0 }} 排队
           </p>
-        </details>
-      </template>
-    </section>
+          <p v-else class="log-path-hint">无法获取服务状态，请确认服务已启动后点击刷新。</p>
+          <details v-if="serverHealth?.memoryGuard" class="memory-details">
+            <summary>
+              内存缓存守护
+              <span
+                class="memory-guard-badge"
+                :class="serverHealth.memoryGuard.nearLimit ? 'warn' : 'ok'"
+              >
+                {{ serverHealth.memoryGuard.nearLimit ? '接近清理阈值' : '正常' }}
+              </span>
+            </summary>
+            <dl class="health-meta-list">
+              <div class="health-meta-row">
+                <dt>RSS / 软限制 / 硬限制</dt>
+                <dd>
+                  {{ serverHealth.memoryGuard.rssMB }} / {{ serverHealth.memoryGuard.rssSoftLimitMB }} / {{ serverHealth.memoryGuard.rssHardLimitMB }} MB
+                </dd>
+              </div>
+              <div class="health-meta-row">
+                <dt>试听链接缓存</dt>
+                <dd>{{ formatCacheStat(serverHealth.memoryGuard.caches?.playUrl) }}</dd>
+              </div>
+              <div class="health-meta-row">
+                <dt>专辑详情缓存</dt>
+                <dd>{{ formatCacheStat(serverHealth.memoryGuard.caches?.album) }}</dd>
+              </div>
+              <div class="health-meta-row">
+                <dt>歌单解析缓存</dt>
+                <dd>{{ formatCacheStat(serverHealth.memoryGuard.caches?.playlist) }}</dd>
+              </div>
+              <div class="health-meta-row">
+                <dt>自动清理次数</dt>
+                <dd>{{ serverHealth.memoryGuard.trimCount || 0 }} 次</dd>
+              </div>
+              <div class="health-meta-row">
+                <dt>上次清理</dt>
+                <dd>{{ formatHealthTime(serverHealth.memoryGuard.lastTrimAt) }}</dd>
+              </div>
+              <div class="health-meta-row">
+                <dt>上次检查</dt>
+                <dd>{{ formatHealthTime(serverHealth.memoryGuard.lastCheckAt) }}</dd>
+              </div>
+              <div v-if="serverHealth.memoryGuard.lastTrimRssMB" class="health-meta-row">
+                <dt>上次清理时 RSS</dt>
+                <dd>约 {{ serverHealth.memoryGuard.lastTrimRssMB }} MB</dd>
+              </div>
+            </dl>
+            <p class="memory-guard-tip">
+              RSS 超过 {{ serverHealth.memoryGuard.rssSoftLimitMB }} MB 时会自动裁剪试听/专辑/歌单缓存；超过 {{ serverHealth.memoryGuard.rssHardLimitMB }} MB 时清空相关缓存。
+            </p>
+          </details>
+        </template>
+      </section>
+    </div>
 
     <section v-if="isAdminUser" class="about-admin">
       <h2 class="section-title about-admin-heading">账号恢复</h2>
@@ -509,7 +509,7 @@ function formatDate(iso) {
 
 .about-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) minmax(0, 1.2fr);
   gap: 14px;
   align-items: stretch;
 }
@@ -880,18 +880,19 @@ function formatDate(iso) {
 
 .community-body {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
+  gap: 12px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .community-info {
   flex: 1;
-  min-width: 200px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .community-name {
@@ -946,14 +947,36 @@ function formatDate(iso) {
 }
 
 .community-qr-img {
-  width: 124px;
-  height: 124px;
+  width: 96px;
+  height: 96px;
   object-fit: contain;
   border-radius: 12px;
   background: #fff;
   border: 1px solid var(--border-light);
-  padding: 6px;
+  padding: 5px;
   box-sizing: border-box;
+}
+
+.about-row .ops-card,
+.about-row .pwa-card,
+.about-row .community-card {
+  min-width: 0;
+  height: 100%;
+}
+
+.about-row .log-path-row {
+  flex-wrap: nowrap;
+}
+
+.about-row .log-path-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.about-row .ops-health-line {
+  font-size: 12px;
 }
 
 .community-qr figcaption {
@@ -1358,18 +1381,48 @@ function formatDate(iso) {
   color: var(--text-muted);
 }
 
+@media (max-width: 1100px) {
+  .about-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .about-row .ops-card {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 768px) {
   .about-row {
     grid-template-columns: 1fr;
   }
 
+  .about-row .ops-card {
+    grid-column: auto;
+  }
+
   .community-body {
     flex-direction: column-reverse;
     align-items: stretch;
+    flex-wrap: wrap;
   }
 
   .community-qr {
     align-self: center;
+  }
+
+  .community-qr-img {
+    width: 124px;
+    height: 124px;
+  }
+
+  .about-row .log-path-row {
+    flex-wrap: wrap;
+  }
+
+  .about-row .log-path-value {
+    white-space: normal;
+    word-break: break-all;
+    text-overflow: unset;
   }
 
   .community-join {

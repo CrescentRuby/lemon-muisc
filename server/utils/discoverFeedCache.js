@@ -7,7 +7,6 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import os from 'os'
 
 const FRESH_TTL_MS = 15 * 60 * 1000
 const STALE_TTL_MS = 24 * 60 * 60 * 1000
@@ -21,9 +20,8 @@ const inflight = new Map()
 const refreshing = new Set()
 
 function cacheRoot() {
-  const base = process.env.DOWNLOAD_PATH
-    || process.env.CONFIG_PATH
-    || path.join(os.tmpdir(), 'lemon-music')
+  // 放系统配置目录（飞牛 @appdata/…/config），勿写入用户音乐/下载目录
+  const base = process.env.CONFIG_PATH || path.join(process.cwd(), 'config')
   const dir = path.join(base, 'discover-feed-cache')
   try { fs.mkdirSync(dir, { recursive: true }) } catch {}
   return dir
