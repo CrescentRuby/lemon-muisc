@@ -640,10 +640,21 @@
               </label>
             </div>
           </div>
-          <label class="rename-on-save">
-            <input v-model="renameOnSave" type="checkbox" />
-            <span>保存时同步改文件名为「歌名 - 歌手」</span>
-          </label>
+          <div class="rename-on-save">
+            <label class="rename-on-save-check">
+              <input v-model="renameOnSave" type="checkbox" />
+              <span>保存时同步改文件名为</span>
+            </label>
+            <AppSelect
+              v-model="renamePattern"
+              class="rename-pattern-select"
+              :options="renamePatternOptions"
+              size="sm"
+              min-width="8.5rem"
+              title="文件名格式"
+              :disabled="!renameOnSave"
+            />
+          </div>
           <div class="edit-actions-btns">
             <button
               class="btn-primary"
@@ -935,8 +946,15 @@ const missingFilter = ref('all')
 const selectAll = ref(false)
 const saving = ref(false)
 const renamingFile = ref(false)
-/** 保存标签时按「歌名 - 歌手」同步改文件名（默认开，便于清掉 Unknown） */
+/** 保存标签时同步改文件名（默认开，便于清掉 Unknown） */
 const renameOnSave = ref(true)
+/** title-artist = 歌名 - 歌手；artist-title = 歌手 - 歌名 */
+const renamePattern = ref('title-artist')
+const renamePatternOptions = [
+  { value: 'title-artist', label: '歌名 - 歌手' },
+  { value: 'artist-title', label: '歌手 - 歌名' },
+]
+const RENAME_PREF_KEY = 'lemon-tag-rename-on-save'
 const fetchSource = ref('tx')
 const REWRITE_PREF_KEY = 'lemon-tag-rewrite-prefs'
 const rewriteFieldFlags = reactive({
@@ -965,6 +983,25 @@ function loadRewritePrefs() {
       if (typeof raw[key] === 'boolean') rewriteFieldFlags[key] = raw[key]
     }
     if (typeof raw.useExistingTags === 'boolean') rewriteUseExistingTags.value = raw.useExistingTags
+  } catch {}
+}
+
+function loadRenamePrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RENAME_PREF_KEY) || '{}')
+    if (typeof raw.enabled === 'boolean') renameOnSave.value = raw.enabled
+    if (raw.pattern === 'artist-title' || raw.pattern === 'title-artist') {
+      renamePattern.value = raw.pattern
+    }
+  } catch {}
+}
+
+function saveRenamePrefs() {
+  try {
+    localStorage.setItem(RENAME_PREF_KEY, JSON.stringify({
+      enabled: renameOnSave.value,
+      pattern: renamePattern.value,
+    }))
   } catch {}
 }
 
@@ -1063,6 +1100,10 @@ watch(
   },
   { deep: true },
 )
+
+watch([renameOnSave, renamePattern], () => {
+  saveRenamePrefs()
+})
 const fetchLoading = ref(false)
 const fetchResults = ref([])
 const fetchPreview = ref(null)
@@ -1482,6 +1523,7 @@ watch(matching, (running) => {
 
 onMounted(async () => {
   loadRewritePrefs()
+  loadRenamePrefs()
   compactMq = window.matchMedia('(max-width: 1100px)')
   syncCompactLayout()
   if (compactMq.addEventListener) compactMq.addEventListener('change', syncCompactLayout)
@@ -2603,7 +2645,7 @@ function sanitizeFileBaseName(name) {
     .trim()
 }
 
-/** 按「歌名 - 歌手.ext」生成目标文件名（与下载默认模板一致） */
+/** 按所选模板生成目标文件名（歌名-歌手 / 歌手-歌名） */
 function buildTaggedFileName(file, meta = {}) {
   const current = String(file?.fileName || '')
   const extMatch = current.match(/(\.[^.\\/]+)$/)
@@ -2611,7 +2653,10 @@ function buildTaggedFileName(file, meta = {}) {
   const title = sanitizeFileBaseName(meta.title || file?.title || '') || 'Unknown'
   const artistRaw = meta.artist || file?.artist || ''
   const artist = sanitizeFileBaseName(isPlaceholderName(artistRaw) ? '' : artistRaw) || 'Unknown'
-  return `${title} - ${artist}${ext}`
+  const base = renamePattern.value === 'artist-title'
+    ? `${artist} - ${title}`
+    : `${title} - ${artist}`
+  return `${base}${ext}`
 }
 
 /** 写标签成功后按需改名；失败不阻断保存结果 */
@@ -4340,23 +4385,40 @@ tr.playing .play-btn,
 }
 .rename-on-save {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   width: 100%;
   font-size: 12px;
   color: var(--text-secondary);
   margin: 0;
-  cursor: pointer;
-  user-select: none;
   line-height: 1.45;
 }
-.rename-on-save input {
+.rename-on-save-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+  min-width: 0;
+}
+.rename-on-save-check input {
   accent-color: var(--accent);
   margin: 2px 0 0;
   flex-shrink: 0;
 }
-.rename-on-save span {
+.rename-on-save-check span {
   min-width: 0;
+}
+.rename-pattern-select {
+  flex: 0 0 auto;
+}
+.rename-pattern-select :deep(.app-select-trigger) {
+  height: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .detail-loading {

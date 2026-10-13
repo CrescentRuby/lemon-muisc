@@ -130,10 +130,13 @@
                   />
                 </label>
                 <span class="dup-file-label">
-                  <code :title="f.filePath" class="dup-path">{{ f.fileName || f.filePath }}</code>
-                  <span v-if="f.size" class="dup-size">{{ formatFakeSize(f.size) }}</span>
+                  <span class="dup-file-primary">
+                    <code class="dup-name">{{ f.fileName || f.filePath }}</code>
+                    <span v-if="f.size" class="dup-size">{{ formatFakeSize(f.size) }}</span>
+                    <span v-if="f.bitrate" class="dup-meta">{{ Math.round(f.bitrate / 1000) }}kbps</span>
+                  </span>
+                  <code v-if="f.filePath" class="dup-filepath" :title="f.filePath">{{ f.filePath }}</code>
                 </span>
-                <span v-if="f.bitrate" class="dup-meta">{{ Math.round(f.bitrate / 1000) }}kbps</span>
                 <span class="dup-file-actions">
                   <button
                     type="button"
@@ -244,7 +247,8 @@
               />
             </label>
             <div class="fake-main">
-              <code :title="f.filePath" class="dup-path">{{ f.fileName || f.filePath }}</code>
+              <code class="dup-name">{{ f.fileName || f.filePath }}</code>
+              <code v-if="f.filePath" class="dup-filepath" :title="f.filePath">{{ f.filePath }}</code>
               <div class="fake-meta">
                 <span>{{ formatFakeSize(f.size) }}</span>
                 <span v-if="f.title || f.artist">{{ [f.artist, f.title].filter(Boolean).join(' · ') }}</span>
@@ -1613,7 +1617,7 @@ async function startOrganize() {
 }
 .dup-file-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 8px 14px;
   border-top: 1px solid var(--border);
@@ -1625,6 +1629,7 @@ async function startOrganize() {
 .dup-check {
   display: inline-flex;
   align-items: center;
+  margin-top: 2px;
 }
 .dup-check input {
   width: 15px;
@@ -1636,9 +1641,16 @@ async function startOrganize() {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dup-file-primary {
+  display: flex;
   align-items: baseline;
   gap: 8px;
+  min-width: 0;
 }
+.dup-name,
 .dup-path {
   flex: 0 1 auto;
   min-width: 0;
@@ -1648,11 +1660,28 @@ async function startOrganize() {
   font-size: 12px;
   color: var(--text);
 }
+.dup-filepath {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
 .dup-size {
   flex: 0 0 auto;
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+.fake-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .dup-meta {
   font-size: 12px;
@@ -1662,6 +1691,7 @@ async function startOrganize() {
 .dup-file-actions {
   display: flex;
   gap: 6px;
+  margin-top: 1px;
   white-space: nowrap;
 }
 .fm-hint {
@@ -1681,7 +1711,7 @@ async function startOrganize() {
 }
 .fake-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 10px 14px;
   border-top: 1px solid var(--border);
@@ -2052,7 +2082,7 @@ async function startOrganize() {
   color: var(--text);
 }
 
-/* 窄屏：左右分栏改为上下堆叠 */
+/* 窄屏：左右分栏改为上下堆叠；清理列表纵向排版 */
 @media (max-width: 768px) {
   .org-layout {
     grid-template-columns: 1fr;
@@ -2066,6 +2096,85 @@ async function startOrganize() {
   }
   .org-file-list {
     max-height: 260px;
+  }
+
+  .fm-panel-toolbar {
+    align-items: stretch;
+  }
+  .fm-batch-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .fm-batch-actions .btn-ghost {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .small-threshold {
+    width: 100%;
+  }
+  .dup-group-title {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .dup-count {
+    margin-left: 0;
+  }
+  .dup-file-row {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 10px 12px;
+  }
+  .dup-file-label {
+    flex: 1 1 calc(100% - 28px);
+  }
+  .dup-file-primary {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .dup-name {
+    flex: 1 1 100%;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .dup-filepath {
+    white-space: normal;
+    word-break: break-all;
+    line-height: 1.4;
+  }
+  .dup-file-actions {
+    flex: 1 1 100%;
+    margin-top: 0;
+    padding-left: 25px;
+    box-sizing: border-box;
+  }
+  .dup-file-actions .btn-ghost {
+    flex: 1;
+    min-width: 0;
+  }
+  .fake-row {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  .fake-main {
+    flex: 1 1 calc(100% - 28px);
+  }
+  .fake-row > .dup-meta {
+    order: 3;
+  }
+  .fake-row > .btn-ghost,
+  .fake-row > .dup-file-actions {
+    flex: 1 1 100%;
+    order: 4;
+    margin-left: 25px;
+    width: auto;
+    box-sizing: border-box;
+  }
+  .fake-row > .dup-file-actions {
+    padding: 0;
+  }
+  .fake-row > .dup-file-actions .btn-ghost {
+    flex: 1;
+    min-width: 0;
   }
 }
 </style>
