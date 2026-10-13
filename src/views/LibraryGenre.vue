@@ -120,11 +120,11 @@
               </MobileRowActions>
             </div>
           </div>
-          <div v-if="totalPages > 1" class="pager">
-            <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-            <span>{{ page }} / {{ totalPages }}</span>
-            <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-          </div>
+          <ListPager
+            v-model:page="page"
+            v-model:page-size="pageSize"
+            :total="genre?.trackCount || genre?.tracks?.length || 0"
+          />
         </template>
       </section>
     </template>
@@ -149,7 +149,9 @@ import { formatTrackTags } from '../utils/format.js'
 import PickPlaylistModal from '../components/PickPlaylistModal.vue'
 import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
+import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused } from '../stores/player.js'
 import {
   libraryScanned,
@@ -169,7 +171,7 @@ const genreId = ref('')
 const genre = ref(null)
 const loading = ref(false)
 const page = ref(1)
-const pageSize = 30
+const { pageSize } = useListPageSize()
 const hoverKey = ref('')
 const actionsOpenKey = ref('')
 
@@ -193,8 +195,8 @@ const mixMainStyle = computed(() => ({
   background: `linear-gradient(135deg, ${theme.value.bg} 0%, rgba(0,0,0,0.04) 100%)`,
   '--genre-accent': theme.value.border,
 }))
-const totalPages = computed(() => Math.max(1, Math.ceil((genre.value?.trackCount || genre.value?.tracks?.length || 0) / pageSize)))
-const listStart = computed(() => (page.value - 1) * pageSize)
+const totalPages = computed(() => Math.max(1, Math.ceil((genre.value?.trackCount || genre.value?.tracks?.length || 0) / pageSize.value)))
+const listStart = computed(() => (page.value - 1) * pageSize.value)
 const pagedTracks = computed(() => genre.value?.tracks || [])
 
 async function loadGenre() {
@@ -208,7 +210,7 @@ async function loadGenre() {
     const [tracksRes, metaRes] = await Promise.all([
       fetchLibraryTracksPage(api, {
         page: page.value,
-        limit: pageSize,
+        limit: pageSize.value,
         genre: name,
         sort: 'mtime',
         replace: false,
@@ -240,7 +242,7 @@ watch(() => route.query.id, (id) => {
   page.value = 1
 })
 
-watch([genreId, page], () => {
+watch([genreId, page, pageSize], () => {
   if (genreId.value) loadGenre()
 })
 

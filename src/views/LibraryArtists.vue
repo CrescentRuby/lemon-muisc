@@ -29,11 +29,12 @@
           <div class="artist-card-meta">{{ artist.trackCount }} 首 · {{ artist.albumCount }} 张专辑</div>
         </button>
       </div>
-      <div v-if="totalPages > 1" class="pager">
-        <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-        <span>{{ page }} / {{ totalPages }}</span>
-        <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-      </div>
+      <ListPager
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change-page-size="loadPage"
+      />
     </section>
   </div>
 </template>
@@ -43,20 +44,22 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api.js'
 import CoverArt from '../components/CoverArt.vue'
+import ListPager from '../components/ListPager.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { fetchLibraryArtists, scanLibrary, libraryScanned } from '../stores/library.js'
 
 const router = useRouter()
 const artists = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 60
+const { pageSize } = useListPageSize()
 const loading = ref(false)
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
 async function loadPage() {
   loading.value = true
   try {
-    const res = await fetchLibraryArtists(api, { page: page.value, limit: pageSize, sort: 'count' })
+    const res = await fetchLibraryArtists(api, { page: page.value, limit: pageSize.value, sort: 'count' })
     artists.value = res.items
     total.value = res.total
   } catch {
@@ -68,6 +71,7 @@ async function loadPage() {
 }
 
 watch(page, () => { loadPage() })
+watch(pageSize, () => { page.value = 1; loadPage() })
 
 onMounted(async () => {
   if (!libraryScanned.value) {

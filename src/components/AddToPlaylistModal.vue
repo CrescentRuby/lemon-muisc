@@ -44,11 +44,11 @@
           </label>
           <div v-if="!filtered.length" class="empty">音乐库暂无歌曲</div>
         </div>
-        <div class="pager" v-if="totalPages > 1">
-          <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }}</span>
-          <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="filtered.length"
+        />
         <div class="modal-actions">
           <button type="button" class="btn-primary" :disabled="!selectedKeys.length" @click="confirmAdd">
             添加 {{ selectedKeys.length || '' }}
@@ -69,8 +69,10 @@
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import CoverArt from './CoverArt.vue'
+import ListPager from './ListPager.vue'
 import SearchInput from './SearchInput.vue'
 import { SEARCH_HISTORY_KEYS } from '../composables/useSearchHistory.js'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { libraryTracks, addTracksToPlaylist, startPlaylistPick } from '../stores/library.js'
 import { formatTrackTags } from '../utils/format.js'
 
@@ -87,7 +89,7 @@ const tab = ref('library')
 const keyword = ref('')
 const pickFilterRef = ref(null)
 const page = ref(1)
-const pageSize = 20
+const { pageSize } = useListPageSize()
 const selectedKeys = ref([])
 
 function rememberPickFilter() {
@@ -105,10 +107,10 @@ const filtered = computed(() => {
   return list
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize.value)))
 const paged = computed(() => {
-  const start = (page.value - 1) * pageSize
-  return filtered.value.slice(start, start + pageSize)
+  const start = (page.value - 1) * pageSize.value
+  return filtered.value.slice(start, start + pageSize.value)
 })
 
 const allSelected = computed(() => paged.value.length > 0 && paged.value.every(s => selectedKeys.value.includes(s.key)))

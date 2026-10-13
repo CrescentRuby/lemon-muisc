@@ -34,11 +34,12 @@
           <div v-if="formatAlbumTags(album)" class="album-tags">{{ formatAlbumTags(album) }}</div>
         </button>
       </div>
-      <div v-if="totalPages > 1" class="pager">
-        <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-        <span>{{ page }} / {{ totalPages }}</span>
-        <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-      </div>
+      <ListPager
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change-page-size="loadPage"
+      />
     </section>
   </div>
 </template>
@@ -49,6 +50,8 @@ import { useRouter } from 'vue-router'
 import { api } from '../api.js'
 import AppSelect from '../components/AppSelect.vue'
 import CoverArt from '../components/CoverArt.vue'
+import ListPager from '../components/ListPager.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { formatAlbumTags } from '../utils/format.js'
 import {
   libraryScanned,
@@ -65,11 +68,11 @@ const albumSort = ref(localStorage.getItem(ALBUM_SORT_KEY) || 'recent')
 const albums = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 48
+const { pageSize } = useListPageSize()
 const loading = ref(false)
 
 const albumSortOptions = computed(() => ALBUM_SORT_OPTIONS.map(o => ({ value: o.id, label: o.label })))
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
 async function loadPage() {
   loading.value = true
@@ -78,7 +81,7 @@ async function loadPage() {
       : albumSort.value === 'artist' ? 'artist'
       : albumSort.value === 'count' ? 'count'
       : 'recent'
-    const res = await fetchLibraryAlbums(api, { page: page.value, limit: pageSize, sort })
+    const res = await fetchLibraryAlbums(api, { page: page.value, limit: pageSize.value, sort })
     albums.value = res.items
     total.value = res.total
   } catch {
@@ -96,6 +99,7 @@ watch(albumSort, (value) => {
 })
 
 watch(page, () => { loadPage() })
+watch(pageSize, () => { page.value = 1; loadPage() })
 
 watch(libraryBrowseRevision, () => {
   loadPage()

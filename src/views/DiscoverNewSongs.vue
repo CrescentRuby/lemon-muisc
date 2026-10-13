@@ -58,21 +58,12 @@
       </div>
     </div>
 
-    <div v-if="list.length || totalPages > 1" class="pager">
-      <button
-        type="button"
-        class="btn-ghost btn-sm"
-        :disabled="page <= 1 || loading"
-        @click="goPage(page - 1)"
-      >上一页</button>
-      <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-      <button
-        type="button"
-        class="btn-ghost btn-sm"
-        :disabled="!canNext || loading"
-        @click="goPage(page + 1)"
-      >下一页</button>
-    </div>
+    <ListPager
+      v-model:page="page"
+      :total-pages="totalPages"
+      :show-size="false"
+      @change-page="goPage"
+    />
 
     <div v-if="toast" class="toast" :class="toast.type">{{ toast.text }}</div>
   </div>
@@ -84,6 +75,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DiscoverSongItem from '../components/discover/DiscoverSongItem.vue'
 import DiscoverSongActions from '../components/discover/DiscoverSongActions.vue'
+import ListPager from '../components/ListPager.vue'
 import { useProgressiveTrackCovers } from '../composables/useProgressiveTrackCovers.js'
 import { api } from '../api.js'
 import { discoverState, loadDiscoverSources, defaultSongRegion } from '../stores/discover.js'

@@ -87,7 +87,11 @@
       </div>
     </div>
 
-    <section v-if="selectedCard" class="detail card">
+    <section
+      v-if="selectedCard"
+      class="detail card"
+      :class="{ 'is-play-rank': isPlayRankSelected }"
+    >
       <div class="detail-hero">
         <PlaylistCover
           v-if="!isNarrow"
@@ -217,7 +221,7 @@
               歌单去重
             </button>
             <button
-              class="btn-ghost btn-sm"
+              class="btn-ghost btn-sm detail-action-join"
               :disabled="!selectedCount"
               @click="openBatchPickPlaylist"
             >
@@ -333,7 +337,8 @@
           </button>
           <button
             type="button"
-            class="btn-ghost btn-sm"
+            class="btn-ghost btn-sm toolbar-join"
+            :class="{ 'is-idle': !selectedCount }"
             :disabled="!selectedCount"
             @click="openBatchPickPlaylist"
           >
@@ -384,18 +389,27 @@
             </button>
             <div class="track-meta">
               <div class="track-name-row">
-                <span class="track-name">{{ song.name }}</span>
+                <span class="track-name" :title="song.name">{{ song.name }}</span>
+                <span
+                  v-if="isPlayRankSelected && song.playCount"
+                  class="track-play-count track-play-count--side"
+                >{{ song.playCount }}次</span>
+              </div>
+              <div class="track-sub-row">
                 <span v-if="song.isLocal" class="track-origin-badge local">本地</span>
                 <span v-else class="track-origin-badge online">{{ onlineBadgeLabel(song) }}</span>
+                <TrackMetaLinks
+                  class="track-artist"
+                  :singer="song.singer"
+                  :album="song.album"
+                />
+                <span
+                  v-if="isPlayRankSelected && song.playCount"
+                  class="track-play-count track-play-count--inline"
+                >{{ song.playCount }}次</span>
               </div>
-              <TrackMetaLinks
-                class="track-artist"
-                :singer="song.singer"
-                :album="song.album"
-              />
               <div class="track-tags">{{ formatTrackTags({ ...song, album: '' }) }}</div>
             </div>
-            <span v-if="isPlayRankSelected && song.playCount" class="track-play-count">{{ song.playCount }} 次</span>
             <MobileRowActions
               :open="actionsOpenKey === song.key"
               @toggle="toggleRowActions(song.key)"
@@ -450,11 +464,11 @@
             </MobileRowActions>
           </div>
         </div>
-        <div class="pager" v-if="trackTotalPages > 1">
-          <button class="btn-ghost btn-sm" :disabled="trackPage <= 1" @click="trackPage--">上一页</button>
-          <span>{{ trackPage }} / {{ trackTotalPages }}</span>
-          <button class="btn-ghost btn-sm" :disabled="trackPage >= trackTotalPages" @click="trackPage++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="trackPage"
+          v-model:page-size="trackPageSize"
+          :total="detailTracks.length"
+        />
       </template>
     </section>
 
@@ -546,7 +560,9 @@ import { useRoute, useRouter } from 'vue-router'
 import PlaylistCover from '../components/PlaylistCover.vue'
 import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
+import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import PlaylistEditModal from '../components/PlaylistEditModal.vue'
 import PlaylistDedupModal from '../components/PlaylistDedupModal.vue'
 import CreatePlaylistModal from '../components/CreatePlaylistModal.vue'
@@ -610,7 +626,7 @@ const route = useRoute()
 const router = useRouter()
 const selectedId = ref('')
 const trackPage = ref(1)
-const trackPageSize = 20
+const { pageSize: trackPageSize } = useListPageSize()
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showAddModal = ref(false)
@@ -788,11 +804,19 @@ const deleteConfirmMessage = computed(() => {
   return `确定删除歌单「${name}」吗？此操作不可恢复。`
 })
 
-const trackTotalPages = computed(() => Math.max(1, Math.ceil((detailTracks.value.length || 0) / trackPageSize)))
-const listStart = computed(() => (trackPage.value - 1) * trackPageSize)
+const trackTotalPages = computed(() => Math.max(1, Math.ceil((detailTracks.value.length || 0) / trackPageSize.value)))
+const listStart = computed(() => (trackPage.value - 1) * trackPageSize.value)
 const pagedTracks = computed(() => {
   const tracks = detailTracks.value || []
-  return tracks.slice(listStart.value, listStart.value + trackPageSize)
+  return tracks.slice(listStart.value, listStart.value + trackPageSize.value)
+})
+
+watch(trackPageSize, () => {
+  trackPage.value = 1
+})
+
+watch(trackTotalPages, (pages) => {
+  if (trackPage.value > pages) trackPage.value = pages
 })
 
 useProgressiveTrackCovers(() => pagedTracks.value, {
@@ -1854,17 +1878,33 @@ function artistInitial(name) {
   background: var(--bg-hover);
 }
 .track-row.active .track-name { color: var(--accent); }
-.track-index { width: 28px; color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
+.track-index { width: 28px; color: var(--text-muted); font-size: 14px; flex-shrink: 0; text-align: center; }
 .track-play-count {
   flex-shrink: 0;
-  margin-left: auto;
-  padding: 2px 10px;
+  padding: 2px 8px;
   border-radius: 999px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.track-play-count--inline { display: none; }
+.track-play-count--side { margin-left: auto; }
+.track-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+}
+.track-sub-row .track-artist {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .rank-tabs {
@@ -1980,7 +2020,14 @@ function artistInitial(name) {
   gap: 8px;
   min-width: 0;
 }
-.track-name { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.track-name {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
 .track-origin-badge {
   flex-shrink: 0;
   font-size: 11px;
@@ -2164,21 +2211,88 @@ function artistInitial(name) {
     height: 8px;
   }
   .detail { padding: 12px; }
-  .detail-hero { gap: 0; margin-bottom: 12px; }
+  .detail-hero { gap: 0; margin-bottom: 10px; }
   .detail-info { min-width: 0; }
-  .detail-info h2 { font-size: 18px; margin-bottom: 4px; }
-  .detail-meta { margin-bottom: 10px; font-size: 12px; }
-  .detail-actions { gap: 6px; }
+  .detail-info h2 { font-size: 18px; margin-bottom: 2px; }
+  .detail-meta { margin-bottom: 8px; font-size: 12px; }
+  .detail-action-join { display: none; }
+  .detail-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .detail-actions .btn-sm,
+  .detail-actions .batch-dl-wrap {
+    min-width: 0;
+    width: 100%;
+  }
   .detail-actions .btn-sm {
-    min-height: 34px;
+    min-height: 36px;
     padding: 6px 10px;
+    font-size: 13px;
+    justify-content: center;
+    width: 100%;
+  }
+  .detail-actions .batch-dl-wrap .btn-sm,
+  .detail-actions .batch-dl-wrap .btn-primary {
+    width: 100%;
+  }
+  .detail.is-play-rank .rank-tabs {
+    display: flex;
+    width: 100%;
+    margin: 0 0 10px;
+  }
+  .detail.is-play-rank .rank-tab {
+    flex: 1;
+    text-align: center;
+    padding: 8px 10px;
+  }
+  .detail.is-play-rank .detail-actions {
+    margin-bottom: 2px;
+  }
+  /* 听歌排行：播放全部独占一行，下载类并排，减少按钮堆叠感 */
+  .detail.is-play-rank .detail-actions > .btn-primary:first-child {
+    grid-column: 1 / -1;
+  }
+  .track-list-toolbar {
+    gap: 6px 8px;
+    margin-bottom: 8px;
+    padding: 0;
+  }
+  .track-list-toolbar .btn-sm {
+    min-height: 32px;
+    padding: 4px 10px;
     font-size: 12px;
   }
+  .toolbar-join.is-idle { display: none; }
+  .batch-select-all { font-size: 12px; }
+  .track-row {
+    gap: 8px;
+    padding: 8px 4px;
+  }
+  .track-index {
+    width: 18px;
+    font-size: 12px;
+    font-weight: 650;
+  }
   .song-cover-btn {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     border-radius: 8px;
   }
+  .track-name { font-size: 14px; }
+  .track-play-count--side { display: none; }
+  .track-play-count--inline {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    font-size: 11px;
+  }
+  .track-origin-badge {
+    font-size: 10px;
+    padding: 2px 5px;
+  }
+  .track-artist { font-size: 12px; }
   .track-tags { display: none; }
 }
 </style>

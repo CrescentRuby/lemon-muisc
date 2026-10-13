@@ -384,11 +384,12 @@
             </MobileRowActions>
           </div>
         </div>
-        <div class="pager" v-if="totalPages > 1">
-          <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }}</span>
-          <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="songTotal || libraryTrackTotal || 0"
+          @change-page-size="loadSongPage"
+        />
       </template>
     </section>
 
@@ -432,7 +433,9 @@ import { api } from '../api.js'
 import PlaylistCover from '../components/PlaylistCover.vue'
 import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
+import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import CreatePlaylistModal from '../components/CreatePlaylistModal.vue'
 import PickPlaylistModal from '../components/PickPlaylistModal.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -562,7 +565,7 @@ const router = useRouter()
 const librarySearchRef = ref(null)
 const keyword = ref('')
 const page = ref(1)
-const pageSize = 20
+const { pageSize } = useListPageSize()
 const hoverKey = ref('')
 const actionsOpenKey = ref('')
 
@@ -669,7 +672,7 @@ const visibleAlbums = computed(() => {
 const filteredSongs = computed(() => libraryTracks.value)
 const sortedFilteredSongs = computed(() => sortLibrarySongs(filteredSongs.value, songSort.value))
 
-const totalPages = computed(() => Math.max(1, Math.ceil((songTotal.value || libraryTrackTotal.value || 0) / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil((songTotal.value || libraryTrackTotal.value || 0) / pageSize.value)))
 const pagedSongs = computed(() => sortedFilteredSongs.value)
 
 async function loadSongPage() {
@@ -678,7 +681,7 @@ async function loadSongPage() {
     const sortMap = { recent: 'mtime', title: 'title', artist: 'artist', album: 'album' }
     const res = await fetchLibraryTracksPage(api, {
       page: page.value,
-      limit: pageSize,
+      limit: pageSize.value,
       sort: sortMap[songSort.value] || 'mtime',
       replace: true,
       // 若已跳到歌手/专辑页，勿用全库 total 冲掉栏目角标

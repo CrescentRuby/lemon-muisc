@@ -106,11 +106,11 @@
               </MobileRowActions>
             </div>
           </div>
-          <div v-if="totalPages > 1" class="pager">
-            <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-            <span>{{ page }} / {{ totalPages }}</span>
-            <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-          </div>
+          <ListPager
+            v-model:page="page"
+            v-model:page-size="pageSize"
+            :total="artist?.trackCount || artist?.tracks?.length || 0"
+          />
         </template>
       </section>
     </template>
@@ -134,7 +134,9 @@ import { api } from '../api.js'
 import PickPlaylistModal from '../components/PickPlaylistModal.vue'
 import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
+import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused } from '../stores/player.js'
 import {
   libraryScanned,
@@ -155,7 +157,7 @@ const artistId = ref('')
 const artist = ref(null)
 const loading = ref(false)
 const page = ref(1)
-const pageSize = 30
+const { pageSize } = useListPageSize()
 const hoverKey = ref('')
 const actionsOpenKey = ref('')
 
@@ -170,8 +172,8 @@ const pickPlaylistTrack = ref(null)
 let narrowMq = null
 
 const artistFavorited = computed(() => (artist.value ? isFavoriteArtist(artist.value) : false))
-const totalPages = computed(() => Math.max(1, Math.ceil((artist.value?.trackCount || artist.value?.tracks?.length || 0) / pageSize)))
-const listStart = computed(() => (page.value - 1) * pageSize)
+const totalPages = computed(() => Math.max(1, Math.ceil((artist.value?.trackCount || artist.value?.tracks?.length || 0) / pageSize.value)))
+const listStart = computed(() => (page.value - 1) * pageSize.value)
 const pagedTracks = computed(() => artist.value?.tracks || [])
 
 function onToggleArtistFavorite() {
@@ -191,7 +193,7 @@ async function loadArtist() {
     const [tracksRes, albumsRes] = await Promise.all([
       fetchLibraryTracksPage(api, {
         page: page.value,
-        limit: pageSize,
+        limit: pageSize.value,
         artist: name,
         sort: 'album',
         replace: false,
@@ -220,7 +222,7 @@ watch(() => route.query.id, (id) => {
   page.value = 1
 })
 
-watch([artistId, page], () => {
+watch([artistId, page, pageSize], () => {
   if (artistId.value) loadArtist()
 })
 

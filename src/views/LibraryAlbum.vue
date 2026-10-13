@@ -121,11 +121,11 @@
             </MobileRowActions>
           </div>
         </div>
-        <div v-if="totalPages > 1" class="pager">
-          <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }}</span>
-          <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="album?.trackCount || album?.tracks?.length || 0"
+        />
       </template>
     </section>
 
@@ -164,7 +164,9 @@ import PlaylistPacedJobPanel from '../components/PlaylistPacedJobPanel.vue'
 import { usePacedJobUi, formatPacedStartToast } from '../composables/usePacedJobUi.js'
 import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
+import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused } from '../stores/player.js'
 import { assertActiveSourceForDownload } from '../stores/downloadGuard.js'
 import {
@@ -185,7 +187,7 @@ const albumId = ref(initialAlbumId)
 const album = ref(null)
 const loading = ref(!!initialAlbumId)
 const page = ref(1)
-const pageSize = 30
+const { pageSize } = useListPageSize()
 const hoverKey = ref('')
 const actionsOpenKey = ref('')
 let loadSeq = 0
@@ -235,8 +237,8 @@ function onToggleAlbumFavorite() {
   const added = toggleFavoriteAlbum(album.value)
   showToast(added ? '已收藏专辑' : '已取消收藏专辑', added ? 'success' : 'info')
 }
-const totalPages = computed(() => Math.max(1, Math.ceil((album.value?.trackCount || album.value?.tracks?.length || 0) / pageSize)))
-const listStart = computed(() => (page.value - 1) * pageSize)
+const totalPages = computed(() => Math.max(1, Math.ceil((album.value?.trackCount || album.value?.tracks?.length || 0) / pageSize.value)))
+const listStart = computed(() => (page.value - 1) * pageSize.value)
 const pagedTracks = computed(() => album.value?.tracks || [])
 
 async function loadAlbum() {
@@ -257,7 +259,7 @@ async function loadAlbum() {
     try {
       const tracksRes = await fetchLibraryTracksPage(api, {
         page: page.value,
-        limit: pageSize,
+        limit: pageSize.value,
         album: name,
         albumArtist,
         sort: 'album',
@@ -283,7 +285,7 @@ async function loadAlbum() {
       }
       const fallback = await fetchLibraryTracksPage(api, {
         page: page.value,
-        limit: pageSize,
+        limit: pageSize.value,
         album: name,
         sort: 'album',
         replace: false,
@@ -315,7 +317,7 @@ watch(() => route.query.id, (id) => {
   page.value = 1
 })
 
-watch([albumId, page], () => {
+watch([albumId, page, pageSize], () => {
   if (albumId.value) loadAlbum()
 })
 

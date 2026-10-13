@@ -48,21 +48,12 @@
       </button>
     </div>
 
-    <div v-if="list.length || totalPages > 1" class="pager">
-      <button
-        type="button"
-        class="btn-ghost btn-sm"
-        :disabled="page <= 1 || loading"
-        @click="goPage(page - 1)"
-      >上一页</button>
-      <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-      <button
-        type="button"
-        class="btn-ghost btn-sm"
-        :disabled="!canNext || loading"
-        @click="goPage(page + 1)"
-      >下一页</button>
-    </div>
+    <ListPager
+      v-model:page="page"
+      :total-pages="totalPages"
+      :show-size="false"
+      @change-page="goPage"
+    />
   </div>
 </template>
 
@@ -71,6 +62,7 @@ defineOptions({ name: 'DiscoverPlaylists' })
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CoverArt from '../components/CoverArt.vue'
+import ListPager from '../components/ListPager.vue'
 import { api } from '../api.js'
 import { discoverState, loadDiscoverSources, recommendSortOptions } from '../stores/discover.js'
 import { platformLabel } from '../utils/platforms.js'

@@ -126,11 +126,12 @@
             </MobileRowActions>
           </div>
         </div>
-        <div v-if="totalPages > 1" class="pager">
-          <button type="button" class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }} · 每页 {{ pageSize }} 条</span>
-          <button type="button" class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="activeTotal"
+          @change-page-size="onPageSizeChange"
+        />
       </section>
 
       <!-- 专辑 -->
@@ -151,11 +152,12 @@
             <div v-if="formatAlbumTags(album)" class="album-tags">{{ formatAlbumTags(album) }}</div>
           </button>
         </div>
-        <div v-if="totalPages > 1" class="pager">
-          <button type="button" class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }} · 每页 {{ pageSize }} 条</span>
-          <button type="button" class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="activeTotal"
+          @change-page-size="onPageSizeChange"
+        />
       </section>
 
       <!-- 歌手 -->
@@ -176,11 +178,12 @@
             <div class="artist-card-meta">{{ artist.trackCount }} 首 · {{ artist.albumCount }} 张专辑</div>
           </button>
         </div>
-        <div v-if="totalPages > 1" class="pager">
-          <button type="button" class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }} · 每页 {{ pageSize }} 条</span>
-          <button type="button" class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="activeTotal"
+          @change-page-size="onPageSizeChange"
+        />
       </section>
 
       <!-- 歌单 -->
@@ -206,11 +209,12 @@
             />
           </button>
         </div>
-        <div v-if="totalPages > 1" class="pager">
-          <button type="button" class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-          <span>{{ page }} / {{ totalPages }} · 每页 {{ pageSize }} 条</span>
-          <button type="button" class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="activeTotal"
+          @change-page-size="onPageSizeChange"
+        />
       </section>
     </template>
 
@@ -236,8 +240,10 @@ import { SEARCH_HISTORY_KEYS } from '../composables/useSearchHistory.js'
 import CoverArt from '../components/CoverArt.vue'
 import PlaylistCover from '../components/PlaylistCover.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
+import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
 import PickPlaylistModal from '../components/PickPlaylistModal.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import { formatTrackTags, formatAlbumTags } from '../utils/format.js'
 import { getTrackFilePath } from '../utils/trackPath.js'
 import { playItem, addToQueue, isPlayingItem, isPaused } from '../stores/player.js'
@@ -264,13 +270,7 @@ const query = computed(() => String(route.query.q || '').trim())
 const activeTab = ref('songs')
 const page = ref(1)
 const loading = ref(false)
-/** 各分类每页固定条数 */
-const PAGE_SIZES = {
-  songs: 20,
-  albums: 24,
-  artists: 36,
-  playlists: 24,
-}
+const { pageSize } = useListPageSize()
 const actionsOpenKey = ref('')
 const pickPlaylistTrack = ref(null)
 const toast = ref(null)
@@ -322,7 +322,6 @@ const activeList = computed(() => {
   return matchedSongs.value
 })
 
-const pageSize = computed(() => PAGE_SIZES[activeTab.value] || 20)
 const activeTotal = computed(() => {
   if (activeTab.value === 'albums') return albumTotal.value
   if (activeTab.value === 'artists') return artistTotal.value
@@ -337,6 +336,11 @@ const pagedItems = computed(() => {
   }
   return activeList.value
 })
+
+function onPageSizeChange() {
+  page.value = 1
+  if (activeTab.value !== 'playlists') runSearch()
+}
 
 async function runSearch() {
   const q = query.value

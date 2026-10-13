@@ -274,11 +274,13 @@
       </div>
     </div>
 
-    <div class="pager" v-if="discoverState.viewMode === 'detail' && showPagination">
-      <button class="btn-ghost btn-sm" :disabled="playlistTrackPage <= 1" @click="playlistTrackPage--">上一页</button>
-      <span class="page-info">第 {{ playlistTrackPage }} / {{ playlistTrackTotalPages }} 页</span>
-      <button class="btn-ghost btn-sm" :disabled="playlistTrackPage >= playlistTrackTotalPages" @click="playlistTrackPage++">下一页</button>
-    </div>
+    <ListPager
+      v-if="discoverState.viewMode === 'detail' && showPagination"
+      v-model:page="playlistTrackPage"
+      v-model:page-size="playlistTrackPageSize"
+      :total="discoverState.results.length"
+      :total-pages="playlistTrackTotalPages"
+    />
 
     <div
       v-if="discoverState.viewMode === 'detail' && discoverState.fetched && !discoverState.loading && !discoverState.results.length"
@@ -357,6 +359,7 @@ import PlaylistPacedJobPanel from '../components/PlaylistPacedJobPanel.vue'
 import { buildBatchDownloadTasks, trackSelectKey } from '../utils/musicPayload.js'
 import { useTrackListView } from '../composables/useTrackListView.js'
 import { useProgressiveTrackCovers } from '../composables/useProgressiveTrackCovers.js'
+import ListPager from '../components/ListPager.vue'
 import { api } from '../api.js'
 import {
   discoverState,
@@ -484,6 +487,7 @@ const MAX_PLAYLIST_QUEUE = 100
 const {
   page: playlistTrackPage,
   totalPages: playlistTrackTotalPages,
+  pageSize: playlistTrackPageSize,
   displayRows,
   containerRef: trackListContainerRef,
   onScroll: onTrackListScroll,
@@ -492,7 +496,6 @@ const {
   measureViewport,
 } = useTrackListView(() => discoverState.results, {
   enableVirtual: false,
-  pageSize: 50,
 })
 
 const pageTrackKeys = computed(() =>

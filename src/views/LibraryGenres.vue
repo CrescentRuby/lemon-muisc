@@ -31,11 +31,12 @@
           <div class="genre-card-meta">{{ genre.trackCount }} 首 · {{ genre.artistCount }} 位歌手</div>
         </button>
       </div>
-      <div v-if="totalPages > 1" class="pager">
-        <button class="btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
-        <span>{{ page }} / {{ totalPages }}</span>
-        <button class="btn-ghost btn-sm" :disabled="page >= totalPages" @click="page++">下一页</button>
-      </div>
+      <ListPager
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change-page-size="loadPage"
+      />
     </section>
   </div>
 </template>
@@ -44,6 +45,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api.js'
+import ListPager from '../components/ListPager.vue'
+import { useListPageSize } from '../composables/useListPageSize.js'
 import {
   libraryScanned,
   getGenreTheme,
@@ -55,14 +58,14 @@ const router = useRouter()
 const genres = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 60
+const { pageSize } = useListPageSize()
 const loading = ref(false)
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
 async function loadPage() {
   loading.value = true
   try {
-    const res = await fetchLibraryGenres(api, { page: page.value, limit: pageSize, sort: 'count' })
+    const res = await fetchLibraryGenres(api, { page: page.value, limit: pageSize.value, sort: 'count' })
     genres.value = res.items
     total.value = res.total
   } catch {
@@ -74,6 +77,7 @@ async function loadPage() {
 }
 
 watch(page, () => { loadPage() })
+watch(pageSize, () => { page.value = 1; loadPage() })
 
 onMounted(async () => {
   if (!libraryScanned.value) {

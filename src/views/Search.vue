@@ -126,11 +126,12 @@
             </div>
           </button>
         </div>
-        <div class="pagination" v-if="searchState.totalPages > 1">
-          <button class="btn-ghost btn-sm" :disabled="searchState.page <= 1" @click="searchState.page--; doSearch()">上一页</button>
-          <span class="page-info">{{ searchState.page }} / {{ searchState.totalPages }}</span>
-          <button class="btn-ghost btn-sm" :disabled="searchState.page >= searchState.totalPages" @click="searchState.page++; doSearch()">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="searchState.page"
+          :total-pages="searchState.totalPages"
+          :show-size="false"
+          @change-page="doSearch"
+        />
       </template>
         <div v-else-if="searchState.searched" class="empty">暂无专辑结果</div>
         <div v-else class="empty album-hint">输入专辑名或歌手后搜索</div>
@@ -159,11 +160,12 @@
             </div>
           </button>
         </div>
-        <div class="pagination" v-if="searchState.totalPages > 1">
-          <button class="btn-ghost btn-sm" :disabled="searchState.page <= 1" @click="searchState.page--; doSearch()">上一页</button>
-          <span class="page-info">{{ searchState.page }} / {{ searchState.totalPages }}</span>
-          <button class="btn-ghost btn-sm" :disabled="searchState.page >= searchState.totalPages" @click="searchState.page++; doSearch()">下一页</button>
-        </div>
+        <ListPager
+          v-model:page="searchState.page"
+          :total-pages="searchState.totalPages"
+          :show-size="false"
+          @change-page="doSearch"
+        />
       </template>
       <div v-else-if="searchState.searched" class="empty">暂无歌单结果</div>
       <div v-else class="empty album-hint">输入歌单名或关键词后搜索</div>
@@ -311,17 +313,21 @@
         </div>
       </div>
 
-      <div class="pagination" v-if="showPagination">
-        <button class="btn-ghost btn-sm" :disabled="albumTrackPage <= 1" @click="albumTrackPage--">上一页</button>
-        <span class="page-info">{{ albumTrackPage }} / {{ albumTrackTotalPages }}</span>
-        <button class="btn-ghost btn-sm" :disabled="albumTrackPage >= albumTrackTotalPages" @click="albumTrackPage++">下一页</button>
-      </div>
+      <ListPager
+        v-if="showPagination"
+        v-model:page="albumTrackPage"
+        v-model:page-size="albumTrackPageSize"
+        :total="searchState.results.length"
+        :total-pages="albumTrackTotalPages"
+      />
 
-      <div class="pagination" v-if="searchState.totalPages > 1 && searchState.viewMode !== 'album-detail'">
-        <button class="btn-ghost btn-sm" :disabled="searchState.page <= 1" @click="searchState.page--; doSearch()">上一页</button>
-        <span class="page-info">{{ searchState.page }} / {{ searchState.totalPages }}</span>
-        <button class="btn-ghost btn-sm" :disabled="searchState.page >= searchState.totalPages" @click="searchState.page++; doSearch()">下一页</button>
-      </div>
+      <ListPager
+        v-if="searchState.totalPages > 1 && searchState.viewMode !== 'album-detail' && searchState.viewMode !== 'playlist-detail'"
+        v-model:page="searchState.page"
+        :total-pages="searchState.totalPages"
+        :show-size="false"
+        @change-page="doSearch"
+      />
     </div>
 
     <div v-if="toast" class="toast" :class="toast.type">{{ toast.text }}</div>
@@ -381,6 +387,7 @@ import BatchQualityDialog from '../components/BatchQualityDialog.vue'
 import PlaylistPacedDownloadDialog from '../components/PlaylistPacedDownloadDialog.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import CoverArt from '../components/CoverArt.vue'
+import ListPager from '../components/ListPager.vue'
 import SearchInput from '../components/SearchInput.vue'
 import { SEARCH_HISTORY_KEYS } from '../composables/useSearchHistory.js'
 import TrackResultRow from '../components/TrackResultRow.vue'
@@ -499,6 +506,7 @@ const searchPlaylistJobId = computed(() => resolveSearchPacedJobId())
 const {
   page: albumTrackPage,
   totalPages: albumTrackTotalPages,
+  pageSize: albumTrackPageSize,
   displayRows,
   containerRef: trackListContainerRef,
   useVirtual: trackListUseVirtual,
