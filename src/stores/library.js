@@ -626,6 +626,8 @@ function persistRecent() {
 
 function persistPlayStats() {
   writeJson(playStatsKey(), playStats.value)
+  // 先抬本地 revision，避免刷新时因未完成上传而被旧服务端数据覆盖
+  bumpLocalRevision()
   scheduleUserDataPersist()
   bumpPlaylistCardsRevision()
 }
@@ -800,7 +802,9 @@ export async function initLibraryUserData(api, user = null) {
     const localFavArtists = readJson(favoriteArtistsKey(), [])
     const localRecent = readJson(recentKey(), [])
     const localPlayStats = normalizePlayStatsList(readJson(playStatsKey(), []))
+    const mergedPlayStats = mergePlayStatsLists(serverPlayStats, localPlayStats)
     const localRev = readLocalRevision()
+    const playStatsNeedUpload = playStatsSignature(mergedPlayStats) !== playStatsSignature(serverPlayStats)
 
     let needUpload = false
     const hasLocalUserData = hasItems(localPl) || hasItems(localFav) || hasItems(localFavAlbums)
@@ -816,7 +820,7 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: localFavAlbums,
         favoriteArtists: localFavArtists,
         recentPlays: localRecent,
-        playStats: localPlayStats,
+        playStats: mergedPlayStats,
         revision: localRev,
       })
       needUpload = true
@@ -827,20 +831,23 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: serverFavAlbums,
         favoriteArtists: serverFavArtists,
         recentPlays: serverRecent,
-        playStats: serverPlayStats,
+        // 服务端更新时仍合并听歌次数，避免未上传的本机播放被冲掉
+        playStats: mergedPlayStats,
         revision: serverRev,
       })
+      needUpload = playStatsNeedUpload
     } else if (hasServerUserData) {
-      // 优先服务端（该用户权威数据），避免串用其他账号的浏览器缓存
+      // 优先服务端（该用户权威数据），听歌统计仍与本地合并
       applyRemoteUserData({
         playlists: serverPl,
         favorites: serverFav,
         favoriteAlbums: serverFavAlbums,
         favoriteArtists: serverFavArtists,
         recentPlays: serverRecent,
-        playStats: serverPlayStats,
+        playStats: mergedPlayStats,
         revision: serverRev || localRev,
       })
+      needUpload = playStatsNeedUpload
     } else {
       // 服务端为空：仅使用「本用户」本地缓存做首次迁移上传
       applyLocalUserData({
@@ -849,16 +856,20 @@ export async function initLibraryUserData(api, user = null) {
         favoriteAlbums: localFavAlbums,
         favoriteArtists: localFavArtists,
         recentPlays: localRecent,
-        playStats: localPlayStats,
+        playStats: mergedPlayStats,
         revision: localRev || (hasLocalUserData ? Date.now() : 0),
       })
       needUpload = hasLocalUserData
     }
 
     ensurePlayStatsSeededFromRecent()
+    if (playStatsNeedUpload || playStatsSignature(playStats.value) !== playStatsSignature(serverPlayStats)) {
+      needUpload = true
+    }
 
+    // 允许后续 persist（含种子写入）正常上传，不再吞掉第一次 schedule
+    skipNextUserDataPersist = false
     if (needUpload) {
-      skipNextUserDataPersist = true
       await saveUserDataToServer()
     }
   } catch {
@@ -877,6 +888,7 @@ export async function initLibraryUserData(api, user = null) {
     if (days != null) setPlaylistRemoteSyncDays(days)
   } catch {}
   finally {
+    skipNextUserDataPersist = false
     userDataSyncReady = true
     flushPendingUserDataPersist()
     void maybeAutoSyncImportedPlaylists(api)
@@ -890,11 +902,23 @@ export async function reloadLibraryUserData() {
     const data = res.data || {}
     const serverRev = Number(data.revision) || 0
     const localRev = readLocalRevision()
+    const localPlayStats = normalizePlayStatsList(readJson(playStatsKey(), []))
+    const mergedPlayStats = mergePlayStatsLists(data.playStats || [], localPlayStats)
+    const playStatsNeedUpload = playStatsSignature(mergedPlayStats) !== playStatsSignature(data.playStats || [])
     if (localRev > serverRev) {
+      playStats.value = mergedPlayStats
+      writeJson(playStatsKey(), playStats.value)
       await saveUserDataToServer()
       return
     }
-    applyRemoteUserData(data)
+    applyRemoteUserData({
+      ...data,
+      playStats: mergedPlayStats,
+    })
+    if (playStatsNeedUpload) {
+      bumpLocalRevision()
+      scheduleUserDataPersist()
+    }
   } catch {}
 }
 
@@ -1122,6 +1146,45 @@ function normalizePlayStatsList(list = []) {
     })
   }
   return out.slice(0, PLAY_STATS_LIMIT)
+}
+
+/** 合并听歌统计：同 key 取更大次数，并合并近 7 天时间戳（避免刷新被旧服务端数据覆盖） */
+function mergePlayStatsLists(primary = [], secondary = []) {
+  const map = new Map()
+  for (const row of [...normalizePlayStatsList(primary), ...normalizePlayStatsList(secondary)]) {
+    const key = String(row?.key || '').trim()
+    if (!key) continue
+    const prev = map.get(key)
+    if (!prev) {
+      map.set(key, { ...row })
+      continue
+    }
+    const recentAts = prunePlayRecentAts(
+      [...(prev.recentAts || []), ...(row.recentAts || [])]
+        .map(Number)
+        .filter(Boolean)
+        .sort((a, b) => a - b)
+        .filter((t, i, arr) => i === 0 || t !== arr[i - 1]),
+    )
+    map.set(key, {
+      ...prev,
+      ...row,
+      key,
+      count: Math.max(Number(prev.count) || 0, Number(row.count) || 0, recentAts.length),
+      recentAts,
+      updatedAt: Math.max(Number(prev.updatedAt) || 0, Number(row.updatedAt) || 0),
+    })
+  }
+  return [...map.values()]
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, PLAY_STATS_LIMIT)
+}
+
+function playStatsSignature(list = []) {
+  return normalizePlayStatsList(list)
+    .map((r) => `${r.key}:${r.count}:${(r.recentAts || []).length}:${r.updatedAt || 0}`)
+    .sort()
+    .join('|')
 }
 
 /** 无统计数据时，用最近播放种子（各计 1 次），便于首次看到排行 */
