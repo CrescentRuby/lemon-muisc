@@ -524,6 +524,11 @@ export const api = {
       }),
     },
     duplicates: () => request('/library/duplicates', { timeout: 60000 }),
+    scanSmallFiles: (maxBytes) => request('/library/scan-small-files', {
+      method: 'POST',
+      body: { maxBytes: Number(maxBytes) || 1024 * 1024 },
+      timeout: 120000,
+    }),
     qualityUpgradeScan: (payload = {}) => request('/library/quality-upgrade/scan', {
       method: 'POST',
       body: payload,

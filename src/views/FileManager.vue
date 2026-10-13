@@ -2,7 +2,7 @@
   <div class="file-manager-page" :class="{ 'fm-embed-tag': activeTab === 'tag' }">
     <div class="fm-head">
       <h2>文件管理</h2>
-      <p class="fm-desc">管理本地音乐文件：编辑标签、查找重复曲目、检测伪 FLAC，或按歌手整理迁移音乐库</p>
+      <p class="fm-desc">管理本地音乐文件：编辑标签、清理重复/小文件、检测伪 FLAC，或按歌手整理迁移音乐库</p>
     </div>
 
     <div class="fm-tabs">
@@ -17,10 +17,10 @@
       <button
         type="button"
         class="fm-tab"
-        :class="{ active: activeTab === 'dedup' }"
-        @click="setTab('dedup')"
+        :class="{ active: activeTab === 'clean' }"
+        @click="setTab('clean')"
       >
-        去重
+        清理
       </button>
       <button
         type="button"
@@ -45,99 +45,223 @@
       <TagEditor v-else-if="tagVisited" embedded />
     </div>
 
-    <!-- ============ 去重 ============ -->
-    <section v-if="activeTab === 'dedup'" class="fm-panel">
-      <div class="fm-panel-toolbar">
+    <!-- ============ 清理（重复曲目 / 小文件） ============ -->
+    <section v-if="activeTab === 'clean'" class="fm-panel">
+      <div class="clean-subtabs" role="tablist" aria-label="清理类型">
         <button
           type="button"
-          class="btn-primary btn-sm"
-          :disabled="dupScanning"
-          @click="scanDuplicates"
-        >
-          {{ dupScanning ? '扫描中…' : '扫描重复曲目' }}
-        </button>
-        <template v-if="dupResult.groups.length">
-          <span class="fm-summary">
-            共 {{ dupResult.groupCount }} 组、{{ dupResult.fileCount }} 个文件
-          </span>
-          <div class="fm-batch-actions">
-            <button
-              type="button"
-              class="btn-ghost btn-sm"
-              :disabled="!selectedPaths.size || batchDeleting"
-              @click="deleteSelected"
-            >
-              删除选中（{{ selectedPaths.size }}）
-            </button>
-            <button
-              type="button"
-              class="btn-ghost btn-sm"
-              :disabled="batchDeleting"
-              @click="keepBestDeleteRest"
-            >
-              每组保留最佳，删除其余
-            </button>
-            <button
-              type="button"
-              class="btn-ghost btn-sm"
-              :disabled="!selectedPaths.size"
-              @click="clearSelection"
-            >
-              取消选择
-            </button>
-          </div>
-        </template>
+          class="clean-subtab"
+          role="tab"
+          :class="{ active: cleanMode === 'dup' }"
+          :aria-selected="cleanMode === 'dup'"
+          @click="cleanMode = 'dup'"
+        >重复曲目</button>
+        <button
+          type="button"
+          class="clean-subtab"
+          role="tab"
+          :class="{ active: cleanMode === 'small' }"
+          :aria-selected="cleanMode === 'small'"
+          @click="cleanMode = 'small'"
+        >小文件</button>
       </div>
 
-      <div v-if="!dupResult.groups.length" class="fm-empty">
-        <p>{{ dupScanned ? '未发现重复曲目' : '点击「扫描重复曲目」查找同歌名+歌手的重复文件（含 Live / Remix 等版本变体，是否删除由你决定）' }}</p>
-      </div>
-
-      <div v-else class="dup-list">
-        <div v-for="(g, gi) in dupResult.groups" :key="gi" class="dup-group">
-          <div class="dup-group-title">
-            <strong>{{ g.title || '未知标题' }}</strong>
-            <span>{{ g.artist || '未知歌手' }}</span>
-            <span class="dup-count">{{ g.count }} 份</span>
-          </div>
-          <ul class="dup-files">
-            <li v-for="(f, fi) in g.files" :key="fi" class="dup-file-row">
-              <label class="dup-check">
-                <input
-                  type="checkbox"
-                  :checked="selectedPaths.has(f.filePath)"
-                  @change="toggleSelect(f.filePath)"
-                />
-              </label>
-              <span class="dup-file-label">
-                <code :title="f.filePath" class="dup-path">{{ f.fileName || f.filePath }}</code>
-                <span v-if="f.size" class="dup-size">{{ formatFakeSize(f.size) }}</span>
-              </span>
-              <span v-if="f.bitrate" class="dup-meta">{{ Math.round(f.bitrate / 1000) }}kbps</span>
-              <span class="dup-file-actions">
-                <button
-                  type="button"
-                  class="btn-ghost btn-sm"
-                  :disabled="dupDeletingPath === f.filePath"
-                  :title="'保留该文件，勾选同组其余文件'"
-                  @click="declareKeepBest(f)"
-                >
-                  保留此项
-                </button>
-                <button
-                  type="button"
-                  class="btn-ghost btn-sm"
-                  :disabled="dupDeletingPath === f.filePath || g.files.length <= 1"
-                  :title="g.files.length <= 1 ? '至少保留一份' : '从磁盘永久删除'"
-                  @click="deleteDupFile(g, f)"
-                >
-                  {{ dupDeletingPath === f.filePath ? '删除中…' : '删除文件' }}
-                </button>
-              </span>
-            </li>
-          </ul>
+      <template v-if="cleanMode === 'dup'">
+        <div class="fm-panel-toolbar">
+          <button
+            type="button"
+            class="btn-primary btn-sm"
+            :disabled="dupScanning"
+            @click="scanDuplicates"
+          >
+            {{ dupScanning ? '扫描中…' : '扫描重复曲目' }}
+          </button>
+          <template v-if="dupResult.groups.length">
+            <span class="fm-summary">
+              共 {{ dupResult.groupCount }} 组、{{ dupResult.fileCount }} 个文件
+            </span>
+            <div class="fm-batch-actions">
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="!selectedPaths.size || batchDeleting"
+                @click="deleteSelected"
+              >
+                删除选中（{{ selectedPaths.size }}）
+              </button>
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="batchDeleting"
+                @click="keepBestDeleteRest"
+              >
+                每组保留最佳，删除其余
+              </button>
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="!selectedPaths.size"
+                @click="clearSelection"
+              >
+                取消选择
+              </button>
+            </div>
+          </template>
         </div>
-      </div>
+
+        <div v-if="!dupResult.groups.length" class="fm-empty">
+          <p>{{ dupScanned ? '未发现重复曲目' : '点击「扫描重复曲目」查找同歌名+歌手的重复文件（含 Live / Remix 等版本变体，是否删除由你决定）' }}</p>
+        </div>
+
+        <div v-else class="dup-list">
+          <div v-for="(g, gi) in dupResult.groups" :key="gi" class="dup-group">
+            <div class="dup-group-title">
+              <strong>{{ g.title || '未知标题' }}</strong>
+              <span>{{ g.artist || '未知歌手' }}</span>
+              <span class="dup-count">{{ g.count }} 份</span>
+            </div>
+            <ul class="dup-files">
+              <li v-for="(f, fi) in g.files" :key="fi" class="dup-file-row">
+                <label class="dup-check">
+                  <input
+                    type="checkbox"
+                    :checked="selectedPaths.has(f.filePath)"
+                    @change="toggleSelect(f.filePath)"
+                  />
+                </label>
+                <span class="dup-file-label">
+                  <code :title="f.filePath" class="dup-path">{{ f.fileName || f.filePath }}</code>
+                  <span v-if="f.size" class="dup-size">{{ formatFakeSize(f.size) }}</span>
+                </span>
+                <span v-if="f.bitrate" class="dup-meta">{{ Math.round(f.bitrate / 1000) }}kbps</span>
+                <span class="dup-file-actions">
+                  <button
+                    type="button"
+                    class="btn-ghost btn-sm"
+                    :disabled="dupDeletingPath === f.filePath"
+                    :title="'保留该文件，勾选同组其余文件'"
+                    @click="declareKeepBest(f)"
+                  >
+                    保留此项
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-ghost btn-sm"
+                    :disabled="dupDeletingPath === f.filePath || g.files.length <= 1"
+                    :title="g.files.length <= 1 ? '至少保留一份' : '从磁盘永久删除'"
+                    @click="deleteDupFile(g, f)"
+                  >
+                    {{ dupDeletingPath === f.filePath ? '删除中…' : '删除文件' }}
+                  </button>
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="fm-panel-toolbar small-toolbar">
+          <label class="small-threshold">
+            <span>小于</span>
+            <input
+              v-model.number="smallMaxValue"
+              type="number"
+              class="small-threshold-input"
+              min="1"
+              step="1"
+              :disabled="smallScanning"
+            />
+            <AppSelect
+              v-model="smallMaxUnit"
+              class="small-threshold-unit"
+              :options="smallUnitOptions"
+              size="sm"
+              min-width="4.5rem"
+              title="大小单位"
+              :disabled="smallScanning"
+            />
+            <span>的音频文件</span>
+          </label>
+          <button
+            type="button"
+            class="btn-primary btn-sm"
+            :disabled="smallScanning || !smallMaxBytes"
+            @click="scanSmallFiles"
+          >
+            {{ smallScanning ? '扫描中…' : '扫描小文件' }}
+          </button>
+          <template v-if="smallResult.files.length">
+            <span class="fm-summary">
+              共 {{ smallResult.count }} 个
+              <span v-if="smallResult.truncated">（已截断至 1000）</span>
+              · 阈值 {{ formatFakeSize(smallResult.maxBytes) }}
+            </span>
+            <div class="fm-batch-actions">
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="!smallSelected.size || smallBusy"
+                @click="deleteSmallSelected"
+              >
+                删除选中（{{ smallSelected.size }}）
+              </button>
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="!smallResult.files.length || smallBusy"
+                @click="selectAllSmall"
+              >
+                全选
+              </button>
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="!smallSelected.size"
+                @click="smallSelected = new Set()"
+              >
+                取消选择
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <p class="fm-hint">
+          用于清理体积过小的试听片段或不完整下载。阈值可按需调整（建议先从 1MB 试扫）；删除不可恢复。
+        </p>
+
+        <div v-if="!smallResult.files.length" class="fm-empty">
+          <p>{{ smallScanned ? '未发现符合条件的小文件' : '设定大小阈值后点击「扫描小文件」' }}</p>
+        </div>
+
+        <ul v-else class="fake-list">
+          <li v-for="f in smallResult.files" :key="f.filePath" class="fake-row">
+            <label class="dup-check">
+              <input
+                type="checkbox"
+                :checked="smallSelected.has(f.filePath)"
+                @change="toggleSmallSelect(f.filePath)"
+              />
+            </label>
+            <div class="fake-main">
+              <code :title="f.filePath" class="dup-path">{{ f.fileName || f.filePath }}</code>
+              <div class="fake-meta">
+                <span>{{ formatFakeSize(f.size) }}</span>
+                <span v-if="f.title || f.artist">{{ [f.artist, f.title].filter(Boolean).join(' · ') }}</span>
+                <span v-if="f.duration">{{ formatDurationSec(f.duration) }}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn-ghost btn-sm"
+              :disabled="smallBusy"
+              @click="deleteSmallOne(f)"
+            >
+              删除
+            </button>
+          </li>
+        </ul>
+      </template>
     </section>
 
     <!-- ============ 伪 FLAC ============ -->
@@ -444,6 +568,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api.js'
 import { appConfirm, appPrompt } from '../stores/appDialog.js'
 import { reloadLibraryTracksFromServer } from '../stores/library.js'
+import AppSelect from '../components/AppSelect.vue'
 import TagEditor from './TagEditor.vue'
 
 defineOptions({ name: 'FileManager' })
@@ -451,10 +576,12 @@ defineOptions({ name: 'FileManager' })
 const route = useRoute()
 const router = useRouter()
 
-const TAB_IDS = ['tag', 'dedup', 'fake-flac', 'organize']
+const TAB_IDS = ['tag', 'clean', 'fake-flac', 'organize']
 
 function normalizeTab(raw) {
   const t = String(raw || '').trim()
+  // 兼容旧链接 ?tab=dedup
+  if (t === 'dedup') return 'clean'
   return TAB_IDS.includes(t) ? t : 'tag'
 }
 
@@ -506,13 +633,149 @@ onMounted(() => {
   if (!route.query.tab) syncTabToRoute(activeTab.value)
 })
 
-/* ---------- 去重 ---------- */
+/* ---------- 清理：重复曲目 / 小文件 ---------- */
+const CLEAN_MODE_KEY = 'lemon.fileManager.cleanMode'
+const SMALL_MAX_VALUE_KEY = 'lemon.fileManager.smallMaxValue'
+const SMALL_MAX_UNIT_KEY = 'lemon.fileManager.smallMaxUnit'
+const cleanMode = ref(localStorage.getItem(CLEAN_MODE_KEY) === 'small' ? 'small' : 'dup')
+watch(cleanMode, (v) => {
+  try { localStorage.setItem(CLEAN_MODE_KEY, v === 'small' ? 'small' : 'dup') } catch {}
+})
+
 const dupScanning = ref(false)
 const dupScanned = ref(false)
 const dupResult = ref({ groupCount: 0, fileCount: 0, groups: [] })
 const dupDeletingPath = ref('')
 const selectedPaths = ref(new Set())
 const batchDeleting = ref(false)
+
+function loadSmallMaxValue() {
+  const n = Number(localStorage.getItem(SMALL_MAX_VALUE_KEY))
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+function loadSmallMaxUnit() {
+  const u = String(localStorage.getItem(SMALL_MAX_UNIT_KEY) || 'MB').toUpperCase()
+  return u === 'KB' ? 'KB' : 'MB'
+}
+const smallMaxValue = ref(loadSmallMaxValue())
+const smallMaxUnit = ref(loadSmallMaxUnit())
+const smallUnitOptions = [
+  { value: 'KB', label: 'KB' },
+  { value: 'MB', label: 'MB' },
+]
+watch(smallMaxValue, (v) => {
+  try { localStorage.setItem(SMALL_MAX_VALUE_KEY, String(Math.max(1, Number(v) || 1))) } catch {}
+})
+watch(smallMaxUnit, (v) => {
+  try { localStorage.setItem(SMALL_MAX_UNIT_KEY, v === 'KB' ? 'KB' : 'MB') } catch {}
+})
+const smallMaxBytes = computed(() => {
+  const n = Math.max(1, Number(smallMaxValue.value) || 1)
+  return smallMaxUnit.value === 'KB' ? Math.floor(n * 1024) : Math.floor(n * 1024 * 1024)
+})
+const smallScanning = ref(false)
+const smallScanned = ref(false)
+const smallResult = ref({ maxBytes: 0, count: 0, truncated: false, files: [] })
+const smallSelected = ref(new Set())
+const smallBusy = ref(false)
+
+function toggleSmallSelect(filePath) {
+  const next = new Set(smallSelected.value)
+  if (next.has(filePath)) next.delete(filePath)
+  else next.add(filePath)
+  smallSelected.value = next
+}
+
+function selectAllSmall() {
+  smallSelected.value = new Set((smallResult.value.files || []).map((f) => f.filePath))
+}
+
+function formatDurationSec(sec) {
+  const n = Math.max(0, Math.round(Number(sec) || 0))
+  if (!n) return ''
+  const m = Math.floor(n / 60)
+  const s = n % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+async function scanSmallFiles() {
+  if (smallScanning.value || !smallMaxBytes.value) return
+  smallScanning.value = true
+  try {
+    const res = await api.library.scanSmallFiles(smallMaxBytes.value)
+    smallResult.value = res?.data || { maxBytes: smallMaxBytes.value, count: 0, truncated: false, files: [] }
+    smallSelected.value = new Set()
+    smallScanned.value = true
+  } catch (e) {
+    alert(e.message || '扫描小文件失败')
+  } finally {
+    smallScanning.value = false
+  }
+}
+
+function pruneSmallResult(deletedSet) {
+  const files = (smallResult.value.files || []).filter((f) => !deletedSet.has(f.filePath))
+  smallResult.value = {
+    ...smallResult.value,
+    count: files.length,
+    files,
+  }
+  smallSelected.value = new Set([...smallSelected.value].filter((p) => !deletedSet.has(p)))
+}
+
+async function deleteSmallOne(file) {
+  const filePath = file?.filePath
+  if (!filePath || smallBusy.value) return
+  const ok = await appConfirm({
+    title: '永久删除小文件',
+    message: `确定从磁盘永久删除？\n\n${file.fileName || filePath}\n${formatFakeSize(file.size)}`,
+    hint: '此操作不可恢复。',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  smallBusy.value = true
+  try {
+    const res = await api.library.deleteFiles([filePath])
+    const failed = res?.data?.failed || []
+    if (failed.length) {
+      alert(failed[0]?.error || '删除失败')
+      return
+    }
+    pruneSmallResult(new Set([filePath]))
+  } catch (e) {
+    alert(e.message || '删除失败')
+  } finally {
+    smallBusy.value = false
+  }
+}
+
+async function deleteSmallSelected() {
+  const list = [...smallSelected.value]
+  if (!list.length || smallBusy.value) return
+  const ok = await appConfirm({
+    title: '批量删除小文件',
+    message: `确定从磁盘永久删除选中的 ${list.length} 个文件？此操作不可恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  smallBusy.value = true
+  try {
+    const res = await api.library.deleteFiles(list)
+    const data = res?.data || {}
+    const failed = data.failed || []
+    const deleted = new Set(data.deleted || [])
+    pruneSmallResult(deleted)
+    if (failed.length) {
+      alert(`${deleted.size > 0 ? `已删除 ${deleted.size} 个，` : ''}${failed.length} 个删除失败：${failed[0]?.error || ''}`)
+    }
+  } catch (e) {
+    alert(e.message || '批量删除失败')
+  } finally {
+    smallBusy.value = false
+  }
+}
 
 function toggleSelect(filePath) {
   const next = new Set(selectedPaths.value)
@@ -1095,7 +1358,7 @@ async function startOrganize() {
       orgPickedFiles.value = new Set()
       dupScanned.value = false
       dupResult.value = { groupCount: 0, fileCount: 0, groups: [] }
-      // 强制全量重载音乐库：确保新旧记录一致、歌手列表/去重列表同步
+      // 强制全量重载音乐库：确保新旧记录一致、歌手列表/清理列表同步
       try {
         await reloadLibraryTracksFromServer(api)
       } catch {}
@@ -1226,6 +1489,60 @@ async function startOrganize() {
   color: var(--accent);
   border-bottom-color: var(--accent);
   font-weight: 600;
+}
+.clean-subtabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+.clean-subtab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.clean-subtab.active {
+  color: var(--text);
+  background: var(--bg-card, var(--bg));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  font-weight: 600;
+}
+.small-toolbar {
+  align-items: center;
+}
+.small-threshold {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.small-threshold-input {
+  width: 72px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 13px;
+}
+.small-threshold-unit {
+  flex: 0 0 auto;
+}
+.small-threshold-unit :deep(.app-select-trigger) {
+  height: 34px;
+  min-height: 34px;
+  border-radius: 8px;
 }
 .fm-panel {
   min-width: 0;

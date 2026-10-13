@@ -579,6 +579,73 @@ libraryRouter.get('/duplicates', (req, res) => {
   }
 })
 
+/** 扫描小于阈值的音频（常为试听片段）；maxBytes 默认 1MB，上限 50MB */
+libraryRouter.post('/scan-small-files', (req, res) => {
+  try {
+    const raw = Number(req.body?.maxBytes)
+    const maxBytes = Math.min(
+      50 * 1024 * 1024,
+      Math.max(1024, Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1024 * 1024),
+    )
+    const userDirs = getMusicPathsForUser(req.user?.id)
+    const tracks = getAllCachedTracks(userDirs) || []
+    const byPath = new Map()
+
+    for (const t of tracks) {
+      const filePath = String(t.filePath || '').trim()
+      if (!filePath) continue
+      const size = Number(t.size) || fileSizeOrZero(filePath)
+      if (size <= 0 || size > maxBytes) continue
+      const resolved = path.resolve(filePath)
+      byPath.set(resolved, {
+        filePath: resolved,
+        fileName: t.fileName || path.basename(resolved),
+        title: t.title || '',
+        artist: t.artist || '',
+        album: t.album || '',
+        duration: Number(t.duration) || 0,
+        size,
+      })
+    }
+
+    // 下载目录可能尚未入索引：补扫小文件
+    try {
+      const dl = getDownloadSavePath(req.user?.id)
+      if (dl && fs.existsSync(dl)) {
+        for (const fp of listAudioFiles(dl)) {
+          const resolved = path.resolve(fp)
+          if (byPath.has(resolved)) continue
+          const size = fileSizeOrZero(resolved)
+          if (size <= 0 || size > maxBytes) continue
+          byPath.set(resolved, {
+            filePath: resolved,
+            fileName: path.basename(resolved),
+            title: '',
+            artist: '',
+            album: '',
+            duration: 0,
+            size,
+          })
+        }
+      }
+    } catch {}
+
+    const files = [...byPath.values()].sort((a, b) => a.size - b.size || String(a.fileName).localeCompare(String(b.fileName), 'zh-CN'))
+    const truncated = files.length > 1000
+    res.json({
+      ok: true,
+      data: {
+        maxBytes,
+        count: files.length,
+        truncated,
+        files: files.slice(0, 1000),
+      },
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 /** 物理删除音乐库内文件（仅允许音乐库/下载目录下的文件） */
 libraryRouter.post('/delete-files', (req, res) => {
   try {
