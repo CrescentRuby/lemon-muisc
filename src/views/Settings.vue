@@ -1,6 +1,6 @@
 <template>
-  <div class="settings-page">
-    <aside class="settings-nav">
+  <div ref="settingsPageRef" class="settings-page">
+    <aside ref="settingsNavRef" class="settings-nav">
       <h2 class="nav-title">设置</h2>
       <p class="nav-sub">按使用场景整理的偏好设置</p>
       <button
@@ -10,7 +10,7 @@
       >{{ tab.label }}</button>
     </aside>
 
-    <main class="settings-panel card">
+    <main ref="settingsPanelRef" class="settings-panel card">
       <h3 class="panel-title">{{ currentTab.label }}</h3>
 
       <!-- 账号管理 -->
@@ -738,48 +738,6 @@
                     <span>平台</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
-                  <div
-                    v-if="expandedSourceId === s.id"
-                    class="source-platform-popover"
-                    role="dialog"
-                    :aria-label="`${s.name} 平台开关`"
-                    @click.stop
-                  >
-                    <div class="platform-popover-head">
-                      <div class="platform-popover-title-row">
-                        <div class="platform-popover-title">平台解析</div>
-                        <div class="platform-switch-actions">
-                          <button type="button" class="plat-link plat-link-on" @click="setSourcePlatformsAll(s, true)">全启用</button>
-                          <button type="button" class="plat-link plat-link-off" @click="setSourcePlatformsAll(s, false)">全关闭</button>
-                        </div>
-                      </div>
-                      <p class="platform-switch-tip">关闭后，该音源不再解析对应平台歌曲（仅对本账号生效）。</p>
-                    </div>
-                    <div class="platform-switch-list">
-                      <div v-for="p in platformOptionsForSource(s)" :key="p.id" class="platform-switch-item">
-                        <div class="platform-switch-left">
-                          <span class="platform-badge" :class="`plat-${p.id}`">{{ p.short }}</span>
-                          <div class="platform-switch-meta">
-                            <div class="platform-switch-name">
-                              {{ p.label }}
-                              <span class="platform-code">{{ p.id }}</span>
-                            </div>
-                            <div class="platform-switch-status" :class="{ on: isSourcePlatformOn(s.id, p.id), auto: isAutoClosedPlatform(s, p.id) }">
-                              {{ platformSwitchStatus(s, p.id) }}
-                            </div>
-                          </div>
-                        </div>
-                        <label class="toggle">
-                          <input
-                            type="checkbox"
-                            :checked="isSourcePlatformOn(s.id, p.id)"
-                            @change="toggleSourcePlatform(s, p.id, $event.target.checked)"
-                          />
-                          <span class="slider"></span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
                 </div>
                 <button v-if="s.health?.unhealthy || autoClosedNotice(s)" class="btn-sm btn-ghost" @click="dismissSourceHealth(s)">知道了</button>
                 <button
@@ -806,6 +764,48 @@
                   :disabled="sourceBusyId === s.id || importingUrl || importingFiles"
                   @click="removeSource(s.id)"
                 >删除</button>
+              </div>
+            </div>
+            <div
+              v-if="expandedSourceId === s.id"
+              class="source-platform-popover"
+              role="dialog"
+              :aria-label="`${s.name} 平台开关`"
+              @click.stop
+            >
+              <div class="platform-popover-head">
+                <div class="platform-popover-title-row">
+                  <div class="platform-popover-title">平台解析</div>
+                  <div class="platform-switch-actions">
+                    <button type="button" class="plat-link plat-link-on" @click="setSourcePlatformsAll(s, true)">全启用</button>
+                    <button type="button" class="plat-link plat-link-off" @click="setSourcePlatformsAll(s, false)">全关闭</button>
+                  </div>
+                </div>
+                <p class="platform-switch-tip">关闭后，该音源不再解析对应平台歌曲（仅对本账号生效）。</p>
+              </div>
+              <div class="platform-switch-list">
+                <div v-for="p in platformOptionsForSource(s)" :key="p.id" class="platform-switch-item">
+                  <div class="platform-switch-left">
+                    <span class="platform-badge" :class="`plat-${p.id}`">{{ p.short }}</span>
+                    <div class="platform-switch-meta">
+                      <div class="platform-switch-name">
+                        {{ p.label }}
+                        <span class="platform-code">{{ p.id }}</span>
+                      </div>
+                      <div class="platform-switch-status" :class="{ on: isSourcePlatformOn(s.id, p.id), auto: isAutoClosedPlatform(s, p.id) }">
+                        {{ platformSwitchStatus(s, p.id) }}
+                      </div>
+                    </div>
+                  </div>
+                  <label class="toggle">
+                    <input
+                      type="checkbox"
+                      :checked="isSourcePlatformOn(s.id, p.id)"
+                      @change="toggleSourcePlatform(s, p.id, $event.target.checked)"
+                    />
+                    <span class="slider"></span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -1150,6 +1150,7 @@
             <div class="setting-item-label">本地转码（弱网 / 车机）</div>
             <div class="setting-item-desc">
               开启：本地 FLAC 等先在 NAS 转成约 128kbps AAC 再播，并预热下一首；在线试听也会压到 128k，适合无线 CarPlay / 弱网。
+              通过局域网 IP / localhost 访问时，本地歌曲仍直出原文件（不转码），外网或域名远程访问时才转码。
               关闭：始终直出原文件，不自动转码；播不动时会提示网络不佳并建议开转码，连播时自动跳下一曲。
               APE / DSF / DFF（DSD）浏览器无法直出，始终转码播放，不受本开关影响。
               开启后会关闭音频可视化。需要可用的 ffmpeg。iPhone/iPad 默认开启。
@@ -1159,6 +1160,50 @@
             <input type="checkbox" :checked="settings['player.smoothStream'] !== 'false'" @change="toggleSmoothStreamSetting" />
             <span class="slider"></span>
           </label>
+        </div>
+        <div class="setting-item">
+          <div class="setting-item-info">
+            <div class="setting-item-label">本机试听缓存</div>
+            <div class="setting-item-desc">
+              仅缓存在当前浏览器（与服务端发现页/封面等预缓存完全独立，互不影响）。
+              成功试听后写入本机；下次同曲、同音质（含是否转码）直接本地播，省流量。
+              音质或转码开关不一致会重新拉取。{{ audioCacheStatsText }}
+            </div>
+          </div>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              :checked="settings[AUDIO_CACHE_ENABLED_KEY] !== 'false'"
+              @change="toggleAudioCacheSetting"
+            />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-item">
+          <div class="setting-item-info">
+            <div class="setting-item-label">本机试听缓存上限</div>
+            <div class="setting-item-desc">只限制本机浏览器占用；不改变 NAS 上服务端磁盘缓存大小。超出按最久未用淘汰</div>
+          </div>
+          <div class="setting-item-action">
+            <AppSelect
+              v-model="settings[AUDIO_CACHE_MAX_MB_KEY]"
+              :options="audioCacheMaxMbOptions"
+              min-width="140px"
+              :disabled="settings[AUDIO_CACHE_ENABLED_KEY] === 'false'"
+              @change="saveAudioCacheMaxMB"
+            />
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-item-info">
+            <div class="setting-item-label">清空本机试听缓存</div>
+            <div class="setting-item-desc">只删本机浏览器里的试听音频，不会清服务端发现页/封面预缓存</div>
+          </div>
+          <div class="setting-item-action">
+            <button type="button" class="btn-ghost btn-sm" :disabled="audioCacheClearing" @click="clearAudioCacheAction">
+              {{ audioCacheClearing ? '清理中…' : '清空' }}
+            </button>
+          </div>
         </div>
         <template v-if="isAdminUser">
           <div class="settings-group-title">下载</div>
@@ -1219,7 +1264,7 @@
           <div class="setting-item">
             <div class="setting-item-info">
               <div class="setting-item-label">下载分组</div>
-              <div class="setting-item-desc">在下载目录下创建子文件夹；按歌手时多位歌手归档到「群星 (Various Artists)」；歌手/专辑为两级目录。请把「下载目录」设在分组根（如 download），不要选进已生成的专辑/歌手子文件夹，否则容易一层层套娃</div>
+              <div class="setting-item-desc">在下载目录下创建子文件夹；按歌手时多位歌手归档到「群星 (Various Artists)」；歌手/专辑为两级目录。专辑名为空或「未知专辑」时不单独建专辑文件夹（落到歌手目录或下载根）。请把「下载目录」设在分组根（如 download），不要选进已生成的专辑/歌手子文件夹，否则容易一层层套娃</div>
             </div>
             <div class="setting-item-action">
               <AppSelect
@@ -1334,10 +1379,25 @@
 
 <script setup>
 defineOptions({ name: 'Settings' })
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api.js'
-import { loadCoverStyle, loadPlayerSettings, setAutoMatchOnPlay, PLAYER_AUTO_MATCH_ON_PLAY_KEY, PLAYER_PLAY_QUALITY_KEY, PLAYER_SMOOTH_STREAM_KEY, PLAY_QUALITY_OPTIONS, normalizePlayQuality } from '../stores/player.js'
+import {
+  loadCoverStyle,
+  loadPlayerSettings,
+  setAutoMatchOnPlay,
+  PLAYER_AUTO_MATCH_ON_PLAY_KEY,
+  PLAYER_PLAY_QUALITY_KEY,
+  PLAYER_SMOOTH_STREAM_KEY,
+  PLAYER_AUDIO_CACHE_ENABLED_KEY,
+  PLAYER_AUDIO_CACHE_MAX_MB_KEY,
+  AUDIO_CACHE_MAX_MB_OPTIONS,
+  PLAY_QUALITY_OPTIONS,
+  normalizePlayQuality,
+  getAudioCacheStats,
+  clearAudioCache,
+  formatCacheBytes,
+} from '../stores/player.js'
 import { scanLibrary, libraryScanning, PLAYLIST_REMOTE_SYNC_DAYS_KEY, setPlaylistRemoteSyncDays, getPlaylistRemoteSyncDays, LIBRARY_SONG_COLUMNS_KEY, setLibrarySongColumns, normalizeLibrarySongColumns, setLibraryHotUpdateEnabled } from '../stores/library.js'
 import { reloadSearchSources } from '../stores/search.js'
 import { reloadDiscoverSources } from '../stores/discover.js'
@@ -1400,6 +1460,11 @@ const playlistIntervalOptions = [
 ]
 const playQualityOptions = PLAY_QUALITY_OPTIONS
 const PLAY_QUALITY_KEY = PLAYER_PLAY_QUALITY_KEY
+const AUDIO_CACHE_ENABLED_KEY = PLAYER_AUDIO_CACHE_ENABLED_KEY
+const AUDIO_CACHE_MAX_MB_KEY = PLAYER_AUDIO_CACHE_MAX_MB_KEY
+const audioCacheMaxMbOptions = AUDIO_CACHE_MAX_MB_OPTIONS
+const audioCacheStatsText = ref('用量加载中…')
+const audioCacheClearing = ref(false)
 const tagMatchConcurrencyOptions = Array.from({ length: 6 }, (_, i) => ({
   value: String(i + 1),
   label: `${i + 1} 路`,
@@ -1483,7 +1548,28 @@ const PLATFORM_SHORT = { tx: 'QQ', wy: '云', kw: '酷', kg: '狗', mg: '咪' }
 /** @type {import('vue').Ref<Record<string, string[]>>} */
 const sourcePlatformMap = ref({})
 const expandedSourceId = ref('')
+const settingsPageRef = ref(null)
+const settingsPanelRef = ref(null)
+const settingsNavRef = ref(null)
 let platformSaveTimer = 0
+
+/** 进入设置页时从页头显示（含 keep-alive 再进入、外层 .content 残留滚动） */
+function scrollSettingsToTop() {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      settingsPanelRef.value?.scrollTo?.({ top: 0, left: 0 })
+      settingsNavRef.value?.scrollTo?.({ top: 0, left: 0 })
+      let node = settingsPageRef.value
+      while (node) {
+        if (node.scrollTop > 0) node.scrollTop = 0
+        node = node.parentElement
+      }
+      try {
+        window.scrollTo(0, 0)
+      } catch {}
+    })
+  })
+}
 const musicPaths = ref([])
 const sharedMusicPaths = ref([])
 const personalMusicPaths = ref([])
@@ -2223,6 +2309,7 @@ watch(() => route.query.tab, (tab) => {
 })
 
 onMounted(async () => {
+  scrollSettingsToTop()
   const tabFromQuery = resolveSettingsTab(String(route.query.tab || '').trim())
   if (tabFromQuery) {
     activeTab.value = tabFromQuery
@@ -2253,7 +2340,13 @@ onMounted(async () => {
         await api.settings.update({ [PLAYER_SMOOTH_STREAM_KEY]: settings[PLAYER_SMOOTH_STREAM_KEY] })
       } catch {}
     }
+    if (settings[AUDIO_CACHE_ENABLED_KEY] == null) settings[AUDIO_CACHE_ENABLED_KEY] = 'true'
+    const allowedMb = audioCacheMaxMbOptions.map((o) => o.value)
+    if (!allowedMb.includes(String(settings[AUDIO_CACHE_MAX_MB_KEY] || ''))) {
+      settings[AUDIO_CACHE_MAX_MB_KEY] = '512'
+    }
     settings[PLAY_QUALITY_KEY] = normalizePlayQuality(settings[PLAY_QUALITY_KEY])
+    refreshAudioCacheStats()
     if (settings['download.isUseOtherSource'] == null) settings['download.isUseOtherSource'] = 'true'
     if (!settings[THEME_KEY]) settings[THEME_KEY] = currentTheme.value
     if (!settings[COLOR_SCHEME_KEY]) settings[COLOR_SCHEME_KEY] = currentColorScheme.value
@@ -2307,6 +2400,10 @@ onMounted(async () => {
   if (isAdminUser.value) loadFfmpegStatus()
   document.addEventListener('click', onSourcePlatformDocClick)
   document.addEventListener('keydown', onSourcePlatformKeydown)
+})
+
+onActivated(() => {
+  scrollSettingsToTop()
 })
 
 onUnmounted(() => {
@@ -2865,6 +2962,7 @@ async function saveSetting(key) {
     if (key === 'player.visualizer') loadPlayerSettings()
     if (key === PLAYER_SMOOTH_STREAM_KEY) loadPlayerSettings()
     if (key === PLAY_QUALITY_KEY) loadPlayerSettings()
+    if (key === AUDIO_CACHE_ENABLED_KEY || key === AUDIO_CACHE_MAX_MB_KEY) loadPlayerSettings()
     if (key === 'download.isUseOtherSource') loadPlayerSettings()
     if (key === THEME_KEY) {
       applyTheme(settings[key], {
@@ -3063,6 +3161,59 @@ async function toggleSmoothStreamSetting() {
     )
   } catch (e) {
     showToast(e.message, 'error')
+  }
+}
+
+async function refreshAudioCacheStats() {
+  try {
+    const s = await getAudioCacheStats()
+    if (!s?.supported) {
+      audioCacheStatsText.value = '当前环境不支持本地音频缓存（需 HTTPS / 安全上下文）'
+      return
+    }
+    audioCacheStatsText.value = `已用 ${formatCacheBytes(s.totalBytes)} / ${formatCacheBytes(s.maxBytes)} · ${s.count} 首`
+  } catch {
+    audioCacheStatsText.value = ''
+  }
+}
+
+async function toggleAudioCacheSetting() {
+  const currentlyOn = settings[AUDIO_CACHE_ENABLED_KEY] !== 'false'
+  settings[AUDIO_CACHE_ENABLED_KEY] = currentlyOn ? 'false' : 'true'
+  try {
+    await api.settings.update({ [AUDIO_CACHE_ENABLED_KEY]: settings[AUDIO_CACHE_ENABLED_KEY] })
+    await loadPlayerSettings()
+    await refreshAudioCacheStats()
+    showToast(
+      settings[AUDIO_CACHE_ENABLED_KEY] !== 'false' ? '已开启本机试听缓存' : '已关闭本机试听缓存',
+      'success',
+    )
+  } catch (e) {
+    showToast(e.message, 'error')
+  }
+}
+
+async function saveAudioCacheMaxMB() {
+  const allowed = audioCacheMaxMbOptions.map((o) => o.value)
+  if (!allowed.includes(String(settings[AUDIO_CACHE_MAX_MB_KEY] || ''))) {
+    settings[AUDIO_CACHE_MAX_MB_KEY] = '512'
+  }
+  await saveSetting(AUDIO_CACHE_MAX_MB_KEY)
+  await refreshAudioCacheStats()
+  showToast(`本机试听缓存上限已设为 ${settings[AUDIO_CACHE_MAX_MB_KEY]} MB`, 'success')
+}
+
+async function clearAudioCacheAction() {
+  if (audioCacheClearing.value) return
+  audioCacheClearing.value = true
+  try {
+    await clearAudioCache()
+    await refreshAudioCacheStats()
+    showToast('已清空本机试听缓存（服务端缓存未动）', 'success')
+  } catch (e) {
+    showToast(e.message || '清空失败', 'error')
+  } finally {
+    audioCacheClearing.value = false
   }
 }
 
@@ -3299,8 +3450,8 @@ function toggleSourcePlatformPanel(sourceId) {
 
 function onSourcePlatformDocClick(event) {
   if (!expandedSourceId.value) return
-  const wrap = event.target?.closest?.('.source-platform-wrap')
-  if (wrap) return
+  if (event.target?.closest?.('.source-platform-wrap')) return
+  if (event.target?.closest?.('.source-platform-popover')) return
   closeSourcePlatformPanel()
 }
 
@@ -4028,18 +4179,25 @@ function showToast(text, type = 'info') {
   z-index: 50;
 }
 .source-platform-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 40;
-  width: min(360px, calc(100vw - 48px));
-  max-height: min(420px, 70vh);
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: min(420px, 60vh);
   overflow: auto;
-  padding: 14px;
-  border-radius: 14px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-elevated, var(--bg-card, var(--bg)));
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.12);
+  -webkit-overflow-scrolling: touch;
+}
+@media (min-width: 769px) {
+  .source-platform-popover {
+    max-width: 420px;
+    margin-left: auto;
+  }
 }
 .platform-popover-head {
   margin-bottom: 12px;
@@ -4097,6 +4255,7 @@ function showToast(text, type = 'info') {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1;
 }
 .platform-badge {
   width: 36px;
@@ -4559,9 +4718,41 @@ function showToast(text, type = 'info') {
   .source-actions { width: 100%; }
   .source-platform-wrap { margin-left: auto; }
   .source-platform-popover {
-    right: 0;
-    left: auto;
-    width: min(360px, calc(100vw - 32px));
+    margin-top: 10px;
+    padding: 10px 12px;
+    max-height: min(360px, 50vh);
+  }
+  .platform-popover-title-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .platform-popover-title-row .platform-switch-actions {
+    margin-left: auto;
+  }
+  .platform-switch-tip {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .platform-switch-item {
+    padding: 8px 10px;
+    gap: 10px;
+  }
+  .platform-badge {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+  .platform-switch-name {
+    flex-wrap: wrap;
+    font-size: 13px;
+    gap: 4px;
+  }
+  .platform-switch-status {
+    font-size: 11px;
+  }
+  .source-platform-popover .toggle {
+    flex-shrink: 0;
   }
   .import-area { flex-direction: column; align-items: stretch; }
   .url-input { min-width: 0; width: 100%; }

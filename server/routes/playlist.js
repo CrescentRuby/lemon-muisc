@@ -35,6 +35,9 @@ playlistRouter.get('/recommend', async (req, res) => {
       RECOMMEND_TIMEOUT_MS,
       '获取推荐歌单超时，请稍后重试',
     )))
+    res.setHeader('Cache-Control', result.cached
+      ? (result.stale ? 'private, max-age=30' : 'private, max-age=120')
+      : 'private, max-age=15')
     res.json({
       ok: true,
       data: result.data,

@@ -147,6 +147,9 @@ startMemoryGuard()
 function shutdown(signal) {
   console.log(`收到 ${signal}，正在关闭服务...`)
   stopLibraryAutoWatch()
+  import('./utils/discoverFeedWarm.js')
+    .then(({ stopDiscoverFeedWarm }) => stopDiscoverFeedWarm())
+    .catch(() => {})
   wss.close(() => {
     listenBundle.close(() => process.exit(0))
   })
@@ -187,6 +190,12 @@ server.listen(PORT, '::', () => {
     syncNativeDesktopProtocol('auto')
   } catch {}
   startLibraryAutoWatch()
+  // 发现页磁盘预热：后台拉推荐/新歌/新碟/榜单，用户打开时优先读盘
+  setTimeout(() => {
+    import('./utils/discoverFeedWarm.js')
+      .then(({ startDiscoverFeedWarm }) => startDiscoverFeedWarm())
+      .catch(() => {})
+  }, 3000).unref?.()
   // 启动后补跑未分析情绪（仅新/未完成文件）
   setTimeout(() => {
     import('./utils/moodAnalyzeJob.js')

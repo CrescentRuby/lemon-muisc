@@ -145,6 +145,14 @@
             <span>全部</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
+          <button
+            type="button"
+            class="section-more-btn"
+            title="管理与清理歌单"
+            @click="openAllPlaylistsManage"
+          >
+            <span>管理</span>
+          </button>
         </div>
       </div>
       <div class="horizontal-scroll playlist-scroll">
@@ -1034,6 +1042,10 @@ function openPlaylist(card) {
 
 function openAllPlaylists() {
   router.push({ path: '/library/playlists' })
+}
+
+function openAllPlaylistsManage() {
+  router.push({ path: '/library/playlists', query: { manage: '1' } })
 }
 
 function onPlaylistCreated({ playlist }) {

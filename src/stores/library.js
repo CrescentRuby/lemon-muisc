@@ -1645,18 +1645,27 @@ export function updatePlaylist(id, patch) {
 }
 
 export function deletePlaylist(id) {
-  if (!id || SMART_PLAYLIST_IDS.has(id)) return false
-  const idx = customPlaylists.value.findIndex(p => p.id === id)
-  if (idx < 0) return false
-  const list = [...customPlaylists.value]
-  list.splice(idx, 1)
-  customPlaylists.value = list
+  return deletePlaylists([id]) > 0
+}
+
+/** 批量删除自建/导入歌单（跳过智能歌单）；返回实际删除数量 */
+export function deletePlaylists(ids) {
+  const idSet = new Set(
+    (Array.isArray(ids) ? ids : [ids])
+      .map((id) => String(id || '').trim())
+      .filter((id) => id && !SMART_PLAYLIST_IDS.has(id)),
+  )
+  if (!idSet.size) return 0
+  const before = customPlaylists.value.length
+  customPlaylists.value = customPlaylists.value.filter((p) => !idSet.has(String(p.id)))
+  const removed = before - customPlaylists.value.length
+  if (!removed) return 0
   persistPlaylists()
   void persistUserDataNow()
-  if (playlistPickTarget.value?.id === id) {
+  if (playlistPickTarget.value?.id && idSet.has(String(playlistPickTarget.value.id))) {
     playlistPickTarget.value = null
   }
-  return true
+  return removed
 }
 
 export function addTracksToPlaylist(playlistId, tracks, sourceOverride, options = {}) {

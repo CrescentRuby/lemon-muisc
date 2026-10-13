@@ -30,11 +30,11 @@
             </label>
           </div>
         </div>
-        <div class="confirm-actions">
+        <div class="confirm-actions" :class="{ 'is-single': mode === 'alert' }">
           <button
             v-if="mode !== 'alert'"
             type="button"
-            class="btn-ghost btn-sm"
+            class="btn-ghost btn-sm confirm-btn-cancel"
             :disabled="busy"
             @click="onCancel()"
           >
@@ -42,7 +42,7 @@
           </button>
           <button
             type="button"
-            class="btn-sm"
+            class="btn-sm confirm-btn-ok"
             :class="danger ? 'btn-danger' : 'btn-primary'"
             :disabled="busy"
             @click="onConfirm()"
@@ -118,8 +118,8 @@ function onCancel() {
   padding: 20px;
 }
 .confirm-modal {
-  width: min(460px, 100%);
-  padding: 22px;
+  width: min(400px, 100%);
+  padding: 18px 20px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-light);
   border-radius: 12px;
@@ -127,9 +127,9 @@ function onCancel() {
 }
 .confirm-body {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   align-items: flex-start;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .confirm-cover-wrap {
   flex-shrink: 0;
@@ -195,6 +195,7 @@ function onCancel() {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  flex-shrink: 0;
 }
 .btn-danger {
   background: var(--error, #e5484d);
@@ -209,17 +210,111 @@ function onCancel() {
   cursor: not-allowed;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 768px) {
+  .confirm-overlay {
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    padding-bottom: calc(
+      var(--player-height, 64px) + var(--mobile-nav-height, 56px) + env(safe-area-inset-bottom, 0px) + 12px
+    );
+  }
+  .confirm-modal {
+    width: min(300px, calc(100vw - 24px));
+    max-height: min(
+      46dvh,
+      calc(
+        100dvh - var(--player-height, 64px) - var(--mobile-nav-height, 56px) - env(safe-area-inset-bottom, 0px) - 32px
+      )
+    );
+    margin: 0 auto;
+    padding: 12px 14px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .confirm-cover-wrap {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+  }
+  .confirm-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 8px;
+    gap: 6px;
+  }
   .confirm-body:not(.no-cover) {
     flex-direction: column;
     align-items: center;
     text-align: center;
   }
+  .confirm-body.no-cover {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+  }
+  .confirm-modal h3 {
+    font-size: 15px;
+    margin-bottom: 2px;
+    line-height: 1.3;
+  }
+  .confirm-text {
+    font-size: 13px;
+    line-height: 1.45;
+    margin-bottom: 0;
+  }
+  .confirm-hint {
+    margin-top: 4px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--bg-input, color-mix(in srgb, var(--text) 4%, transparent));
+    border: 1px solid var(--border-light);
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-muted);
+  }
+  .confirm-input-wrap {
+    margin-top: 10px;
+  }
+  .confirm-input {
+    font-size: 16px;
+    padding: 8px 10px;
+  }
   .confirm-actions {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
     width: 100%;
+    padding-top: 0;
+  }
+  .confirm-actions.is-single {
+    justify-content: stretch;
+  }
+  .confirm-actions.is-single .confirm-btn-ok {
+    flex: 1;
   }
   .confirm-actions .btn-sm {
     flex: 1;
+    width: auto;
+    min-height: 36px;
+    padding: 7px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    justify-content: center;
+  }
+  .confirm-actions .confirm-btn-cancel {
+    flex: 0.95;
+  }
+  .confirm-actions .confirm-btn-ok {
+    flex: 1.05;
   }
 }
+
 </style>

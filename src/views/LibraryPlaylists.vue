@@ -4,26 +4,74 @@
       <button class="btn-ghost btn-sm" @click="$router.back()">← 返回</button>
       <div class="page-title">全部歌单</div>
       <button
-        v-if="showPlaylistMoreBtn"
+        v-if="showPlaylistMoreBtn && !manageMode"
         type="button"
         class="btn-ghost btn-sm"
         @click="showAllPlaylistCards = !showAllPlaylistCards"
       >
         {{ showAllPlaylistCards ? '收起' : '更多' }}
       </button>
-      <button class="btn-primary btn-sm" @click="openCreate">创建歌单</button>
+      <button
+        v-if="customCards.length"
+        type="button"
+        class="btn-ghost btn-sm"
+        @click="toggleManageMode"
+      >{{ manageMode ? '完成' : '管理' }}</button>
+      <button v-if="!manageMode" class="btn-primary btn-sm" @click="openCreate">创建歌单</button>
     </div>
 
-    <div ref="playlistScrollEl" class="playlist-scroll">
+    <div v-if="manageMode" class="manage-bar card">
+      <div class="manage-bar-meta">
+        已选 {{ manageSelectedCount }} / {{ customCards.length }}
+        <span v-if="emptyCustomCount" class="manage-hint">空歌单 {{ emptyCustomCount }}</span>
+        <span v-if="importedCustomCount" class="manage-hint">导入 {{ importedCustomCount }}</span>
+      </div>
+      <div class="manage-bar-actions">
+        <button type="button" class="btn-ghost btn-sm" @click="toggleSelectAllCustom">
+          {{ allCustomSelected ? '取消全选' : '全选' }}
+        </button>
+        <button
+          type="button"
+          class="btn-ghost btn-sm"
+          :disabled="!emptyCustomCount"
+          @click="openBatchDelete('empty')"
+        >清理空歌单</button>
+        <button
+          type="button"
+          class="btn-ghost btn-sm"
+          :disabled="!importedCustomCount"
+          @click="openBatchDelete('imported')"
+        >清理导入歌单</button>
+        <button
+          type="button"
+          class="btn-danger btn-sm"
+          :disabled="!manageSelectedCount"
+          @click="openBatchDelete('selected')"
+        >删除所选</button>
+      </div>
+    </div>
+
+    <div ref="playlistScrollEl" class="playlist-scroll" :class="{ 'is-manage': manageMode }">
       <div ref="playlistGridEl" class="playlist-grid">
         <button
           v-for="card in gridCards"
           :key="card.id"
           class="playlist-card-btn"
-          :class="{ active: selectedId === card.id }"
+          :class="{
+            active: !manageMode && selectedId === card.id,
+            'is-manageable': manageMode && isCustomPlaylist(card.id),
+            'is-checked': manageMode && manageSelectedIds.has(card.id),
+            'is-locked': manageMode && !isCustomPlaylist(card.id),
+          }"
           :data-playlist-id="card.id"
-          @click="selectCard(card)"
+          @click="onPlaylistCardClick(card)"
         >
+          <span
+            v-if="manageMode && isCustomPlaylist(card.id)"
+            class="playlist-check"
+            :class="{ checked: manageSelectedIds.has(card.id) }"
+            aria-hidden="true"
+          />
           <PlaylistCover
             :size="isNarrow ? 'compact' : 'row'"
             :cover-style="card.coverStyle"
@@ -453,13 +501,13 @@
       @added="onAddedToPlaylist"
     />
 
-    <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+    <div v-if="showDeleteModal" class="modal-overlay" @click.self="closeDeleteModal">
       <div class="confirm-modal card" role="dialog" aria-labelledby="delete-playlist-title">
-        <h3 id="delete-playlist-title">删除歌单</h3>
+        <h3 id="delete-playlist-title">{{ deleteModalTitle }}</h3>
         <p class="confirm-text">{{ deleteConfirmMessage }}</p>
         <div class="confirm-actions">
-          <button type="button" class="btn-ghost btn-sm" @click="showDeleteModal = false">取消</button>
-          <button type="button" class="btn-danger btn-sm" @click="doDeletePlaylist">删除</button>
+          <button type="button" class="btn-ghost btn-sm" @click="closeDeleteModal">取消</button>
+          <button type="button" class="btn-danger btn-sm" @click="confirmDeleteAction">删除</button>
         </div>
       </div>
     </div>
@@ -533,6 +581,7 @@ import {
   removeTrackFromPlaylist,
   removeTracksFromPlaylist,
   deletePlaylist,
+  deletePlaylists,
   isCustomPlaylist,
   isImportedPlaylist,
   getCustomPlaylist,
@@ -566,6 +615,10 @@ const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showAddModal = ref(false)
 const showDeleteModal = ref(false)
+/** single | selected | empty | imported */
+const deleteMode = ref('single')
+const manageMode = ref(false)
+const manageSelectedIds = ref(new Set())
 const showDedupModal = ref(false)
 const dedupBusy = ref(false)
 const toast = ref(null)
@@ -692,7 +745,40 @@ const lastRemoteSyncLabel = computed(() => {
   return `上次更新 ${d.toLocaleDateString('zh-CN')}`
 })
 
+const emptyCustomCards = computed(() => customCards.value.filter((c) => !Number(c.count)))
+const importedCustomCards = computed(() => customCards.value.filter((c) => isImportedPlaylist(c.playlist || getCustomPlaylist(c.id))))
+const emptyCustomCount = computed(() => emptyCustomCards.value.length)
+const importedCustomCount = computed(() => importedCustomCards.value.length)
+const manageSelectedCount = computed(() => manageSelectedIds.value.size)
+const allCustomSelected = computed(() => (
+  customCards.value.length > 0
+  && customCards.value.every((c) => manageSelectedIds.value.has(c.id))
+))
+
+const pendingDeleteIds = computed(() => {
+  if (deleteMode.value === 'empty') return emptyCustomCards.value.map((c) => c.id)
+  if (deleteMode.value === 'imported') return importedCustomCards.value.map((c) => c.id)
+  if (deleteMode.value === 'selected') return [...manageSelectedIds.value]
+  return selectedId.value ? [selectedId.value] : []
+})
+
+const deleteModalTitle = computed(() => {
+  if (deleteMode.value === 'empty') return '清理空歌单'
+  if (deleteMode.value === 'imported') return '清理导入歌单'
+  if (deleteMode.value === 'selected') return '删除所选歌单'
+  return '删除歌单'
+})
+
 const deleteConfirmMessage = computed(() => {
+  if (deleteMode.value === 'empty') {
+    return `将删除 ${pendingDeleteIds.value.length} 个空歌单。删除后不可恢复，音乐库中的歌曲文件仍会保留。`
+  }
+  if (deleteMode.value === 'imported') {
+    return `将删除 ${pendingDeleteIds.value.length} 个网络导入歌单。删除后不可恢复，音乐库中的歌曲文件仍会保留。`
+  }
+  if (deleteMode.value === 'selected') {
+    return `将删除所选 ${pendingDeleteIds.value.length} 个歌单。删除后不可恢复，音乐库中的歌曲文件仍会保留。`
+  }
   if (!selectedCard.value) return ''
   const name = selectedCard.value.name
   const count = selectedCard.value.count || 0
@@ -841,6 +927,10 @@ onMounted(async () => {
     cardsLoading.value = false
   }
   refreshActiveJob()
+  if (String(route.query.manage || '') === '1' && customCards.value.length) {
+    manageMode.value = true
+    showAllPlaylistCards.value = true
+  }
   if (q === 'random-start') await startRandomPlay()
 })
 
@@ -1350,17 +1440,101 @@ function removeSong(song) {
   refreshPlaylistCards()
 }
 
+function toggleManageMode() {
+  manageMode.value = !manageMode.value
+  if (manageMode.value) {
+    showAllPlaylistCards.value = true
+    manageSelectedIds.value = new Set()
+  } else {
+    manageSelectedIds.value = new Set()
+  }
+}
+
+function onPlaylistCardClick(card) {
+  if (!manageMode.value) {
+    selectCard(card)
+    return
+  }
+  if (!isCustomPlaylist(card.id)) {
+    showToast('系统歌单不可删除', 'info')
+    return
+  }
+  const next = new Set(manageSelectedIds.value)
+  if (next.has(card.id)) next.delete(card.id)
+  else next.add(card.id)
+  manageSelectedIds.value = next
+}
+
+function toggleSelectAllCustom() {
+  if (allCustomSelected.value) {
+    manageSelectedIds.value = new Set()
+    return
+  }
+  manageSelectedIds.value = new Set(customCards.value.map((c) => c.id))
+}
+
 function openDeletePlaylistModal() {
   if (!canEditSelected.value || !selectedCard.value) return
+  deleteMode.value = 'single'
   showDeleteModal.value = true
+}
+
+function openBatchDelete(mode) {
+  deleteMode.value = mode
+  const ids = mode === 'empty'
+    ? emptyCustomCards.value.map((c) => c.id)
+    : mode === 'imported'
+      ? importedCustomCards.value.map((c) => c.id)
+      : [...manageSelectedIds.value]
+  if (!ids.length) {
+    showToast(mode === 'empty' ? '没有空歌单' : mode === 'imported' ? '没有导入歌单' : '请先勾选歌单', 'info')
+    return
+  }
+  showDeleteModal.value = true
+}
+
+function closeDeleteModal() {
+  showDeleteModal.value = false
+  deleteMode.value = 'single'
+}
+
+async function confirmDeleteAction() {
+  if (deleteMode.value === 'single') {
+    doDeletePlaylist()
+    return
+  }
+  await doBatchDeletePlaylists()
 }
 
 function doDeletePlaylist() {
   const id = selectedId.value
   if (!deletePlaylist(id)) return
-  showDeleteModal.value = false
+  closeDeleteModal()
   refreshPlaylistCards()
   router.push('/library')
+}
+
+async function doBatchDeletePlaylists() {
+  const ids = pendingDeleteIds.value
+  const removed = deletePlaylists(ids)
+  closeDeleteModal()
+  if (!removed) {
+    showToast('没有可删除的歌单', 'info')
+    return
+  }
+  const next = new Set(manageSelectedIds.value)
+  for (const id of ids) next.delete(id)
+  manageSelectedIds.value = next
+  if (ids.includes(selectedId.value)) selectedId.value = ''
+  // 先本地刷新，避免等接口期间仍显示已删歌单
+  try {
+    allCards.value = rebuildPlaylistCardsLocal(allCards.value)
+  } catch {
+    allCards.value = buildPlaylistCards(libraryTracks.value || [])
+  }
+  showToast(`已删除 ${removed} 个歌单`, 'success')
+  if (!customCards.value.length) manageMode.value = false
+  await refreshPlaylistCards()
 }
 
 function onSongsAdded(res) {
@@ -1403,6 +1577,35 @@ function artistInitial(name) {
   flex-wrap: wrap;
 }
 .page-title { font-size: 22px; font-weight: 600; flex: 1; }
+.manage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.manage-bar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.manage-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-input, color-mix(in srgb, var(--text) 5%, transparent));
+}
+.manage-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .playlist-scroll { margin-bottom: 24px; }
 .playlist-grid {
   display: grid;
@@ -1410,6 +1613,7 @@ function artistInitial(name) {
   gap: 18px;
 }
 .playlist-card-btn {
+  position: relative;
   padding: 0;
   border: none;
   background: transparent;
@@ -1418,6 +1622,42 @@ function artistInitial(name) {
   overflow: hidden;
   text-align: left;
   min-width: 0;
+}
+.playlist-card-btn.is-manageable.is-checked {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.playlist-card-btn.is-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.playlist-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.playlist-check.checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.playlist-check.checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 /* 桌面大卡：选中描边在整卡上；小卡横滑时只描封面方块 */
 .playlist-card-btn.active { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1888,6 +2128,41 @@ function artistInitial(name) {
 }
 
 @media (max-width: 768px) {
+  .manage-bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 10px;
+  }
+  .manage-bar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .manage-bar-actions .btn-sm {
+    min-height: 36px;
+    justify-content: center;
+  }
+  .manage-bar-actions .btn-danger {
+    grid-column: 1 / -1;
+  }
+  .playlist-card-btn.is-manageable.is-checked {
+    outline: none;
+  }
+  .playlist-card-btn.is-manageable.is-checked :deep(.playlist-compact-cover) {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .playlist-check {
+    top: 4px;
+    left: 4px;
+    width: 18px;
+    height: 18px;
+  }
+  .playlist-check.checked::after {
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+  }
   .detail { padding: 12px; }
   .detail-hero { gap: 0; margin-bottom: 12px; }
   .detail-info { min-width: 0; }

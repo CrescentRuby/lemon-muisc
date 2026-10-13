@@ -47,10 +47,12 @@
         <p class="nav-label nav-label-gap">工具与设置</p>
         <span class="nav-divider nav-divider-gap" aria-hidden="true"></span>
         <div class="nav-group">
-          <router-link to="/download" class="nav-item" active-class="active">
+          <router-link to="/download" class="nav-item" active-class="active" :title="downloadNavTitle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span class="nav-item-text">下载</span>
-            <span class="nav-tooltip">下载</span>
+            <span v-if="activeDownloadBadgeText" class="nav-badge nav-badge-download">{{ activeDownloadBadgeText }}</span>
+            <span v-if="activeDownloadBadgeText" class="nav-download-dot" aria-hidden="true">{{ activeDownloadBadgeText }}</span>
+            <span class="nav-tooltip">{{ downloadNavTitle }}</span>
           </router-link>
           <router-link to="/file-manager" class="nav-item" :class="{ active: isFileManagerNav }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/></svg>
@@ -406,8 +408,18 @@
         </svg>
         <span>情绪</span>
       </router-link>
-      <router-link to="/download" class="tab-item" active-class="active" @touchstart.passive="onTabPrefetch('/download')" @mousedown="onTabPrefetch('/download')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <router-link
+        to="/download"
+        class="tab-item"
+        active-class="active"
+        :title="downloadNavTitle"
+        @touchstart.passive="onTabPrefetch('/download')"
+        @mousedown="onTabPrefetch('/download')"
+      >
+        <span class="tab-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span v-if="activeDownloadBadgeText" class="tab-count-badge">{{ activeDownloadBadgeText }}</span>
+        </span>
         <span>下载</span>
       </router-link>
       <div class="tab-more-wrap" ref="mobileMoreRef">
@@ -573,6 +585,12 @@ import {
   isRouteLoading, pendingRoutePage, MAIN_TAB_NAMES,
   prefetchRoute,
 } from './stores/navigation.js'
+import {
+  activeDownloadCount,
+  activeDownloadBadgeText,
+  initDownloadBadge,
+  disposeDownloadBadge,
+} from './stores/downloadBadge.js'
 import { isMobileUiContext } from './utils/device.js'
 import { APP_ICON_URL } from './utils/appIcon.js'
 
@@ -616,6 +634,11 @@ const isMobileMoreNav = computed(() => (
   isFileManagerNav.value
   || route.path === '/settings'
   || route.path === '/about'
+))
+const downloadNavTitle = computed(() => (
+  activeDownloadCount.value > 0
+    ? `下载（进行中 ${activeDownloadCount.value}）`
+    : '下载'
 ))
 const showRouteSkeleton = computed(() => isRouteLoading.value && isMobileUiContext(768))
 const showMobileMore = ref(false)
@@ -1189,6 +1212,7 @@ watch(
 onMounted(() => {
   initPlayer()
   offLibraryHotReload = initLibraryHotReload(api, { onWS })
+  initDownloadBadge()
   checkForUpdate()
   loadSourceFault()
   loadPendingDowngradePrompts()
@@ -1285,6 +1309,7 @@ onUnmounted(() => {
   offDownloadPlatformWS?.()
   offExistSummaryWS?.()
   offLibraryHotReload?.()
+  disposeDownloadBadge()
 })
 </script>
 
@@ -1308,7 +1333,8 @@ onUnmounted(() => {
 .app.sidebar-collapsed .logo-text,
 .app.sidebar-collapsed .nav-label,
 .app.sidebar-collapsed .nav-item-text,
-.app.sidebar-collapsed .nav-badge,
+.app.sidebar-collapsed .nav-badge:not(.nav-badge-download),
+.app.sidebar-collapsed .nav-badge-download,
 .app.sidebar-collapsed .user-meta,
 .app.sidebar-collapsed .theme-toggle span,
 .app.sidebar-collapsed .ws-status-text,
@@ -1491,6 +1517,35 @@ onUnmounted(() => {
   font-size: 10.5px;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.nav-badge-download {
+  min-width: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.nav-download-dot {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 2;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+  pointer-events: none;
+}
+.app.sidebar-collapsed .nav-download-dot {
+  display: inline-block;
 }
 .nav-tooltip {
   display: none;
@@ -1970,6 +2025,33 @@ onUnmounted(() => {
     height: 6px;
     border-radius: 50%;
     background: var(--lemon);
+  }
+  .tab-icon-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+  }
+  .tab-count-badge {
+    position: absolute;
+    top: -5px;
+    right: -10px;
+    z-index: 2;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    background: var(--accent);
+    box-shadow: 0 0 0 1.5px var(--bg-elevated, var(--bg));
+    pointer-events: none;
   }
 
   .tab-more-wrap {

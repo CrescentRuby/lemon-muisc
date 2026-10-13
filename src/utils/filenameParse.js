@@ -122,7 +122,7 @@ function parseParenForm(base) {
 export function isPlaceholderName(value) {
   const v = collapseSpace(value)
   if (!v) return true
-  return /^(unknown|unknow|n\/a|null|undefined|未知|未知歌手|未知艺人|未知艺术家|未知标题|未知专辑|track\s*\d+)$/i.test(v)
+  return /^(unknown|unknow|unknown\s*album|n\/a|null|undefined|未知|未知歌手|未知艺人|未知艺术家|未知标题|未知专辑|未知辑名|track\s*\d+)$/i.test(v)
 }
 
 function scrubPlaceholder(value) {

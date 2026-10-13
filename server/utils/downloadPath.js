@@ -1,5 +1,6 @@
 import path from 'path'
 import { splitArtists } from './artistTag.js'
+import { isPlaceholderName } from './filenameParse.js'
 
 export function sanitizePathSegment(name) {
   return String(name || '').replace(/[\\/:*?"<>|]/g, '_').trim()
@@ -7,22 +8,49 @@ export function sanitizePathSegment(name) {
 
 const VARIOUS_ARTISTS_DIR = '群星 (Various Artists)'
 
-function resolveGroupMode(settings = {}) {
+function parseTaskMeta(task = {}) {
+  let meta = task.meta
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta || '{}') } catch { meta = {} }
+  }
+  return meta && typeof meta === 'object' ? meta : {}
+}
+
+/** 真实可用的目录名：去掉空串与「未知专辑」等占位 */
+function usablePathSegment(raw) {
+  const text = String(raw || '').trim()
+  if (!text || isPlaceholderName(text)) return ''
+  return sanitizePathSegment(text)
+}
+
+export function resolveDownloadGroupMode(settings = {}) {
   const mode = String(settings['download.savePathGroupBy'] || '').trim()
   if (mode === 'artist' || mode === 'album' || mode === 'artist-album') return mode
   if (settings['download.isSavePathGroupByListName'] === 'true') return 'album'
   return 'none'
 }
 
-/** 多歌手归档到群星；单歌手取唯一署名 */
+function resolveGroupMode(settings = {}) {
+  return resolveDownloadGroupMode(settings)
+}
+
+/** 多歌手归档到群星；单歌手取唯一署名（占位歌手视为无） */
 function pickArtistSegment(task = {}) {
   const artists = splitArtists(task.singer || task.albumArtist || '')
   if (artists.length >= 2) return VARIOUS_ARTISTS_DIR
-  return artists[0] || ''
+  const one = String(artists[0] || '').trim()
+  if (!one || isPlaceholderName(one)) return ''
+  return one
+}
+
+/** 专辑分组名：任务列优先，其次 meta；未知/空不建文件夹 */
+function pickAlbumSegment(task = {}) {
+  const meta = parseTaskMeta(task)
+  return usablePathSegment(task.album || meta.album || '')
 }
 
 function pickGroupSegment(mode, task = {}) {
-  if (mode === 'album') return task.album || ''
+  if (mode === 'album') return pickAlbumSegment(task)
   if (mode === 'artist') return pickArtistSegment(task)
   return ''
 }
@@ -91,17 +119,14 @@ export function joinDownloadGroupSegments(savePath, segments = []) {
 /** 从任务或 meta 取出歌单文件夹名（循序/批量下载可选） */
 function pickListName(task = {}) {
   if (task.listName) return task.listName
-  let meta = task.meta
-  if (typeof meta === 'string') {
-    try { meta = JSON.parse(meta || '{}') } catch { meta = {} }
-  }
-  if (meta && typeof meta === 'object' && meta.listName) return meta.listName
+  const meta = parseTaskMeta(task)
+  if (meta.listName) return meta.listName
   return ''
 }
 
 /** 根据设置解析下载保存目录（可在根目录下按歌手/专辑分子文件夹；可选歌单文件夹前缀） */
 export function resolveDownloadGroupDir(savePath, settings, task) {
-  const listName = sanitizePathSegment(pickListName(task))
+  const listName = usablePathSegment(pickListName(task))
   let base = savePath
   if (listName) {
     base = joinDownloadGroupSegments(savePath, [listName])
@@ -110,12 +135,16 @@ export function resolveDownloadGroupDir(savePath, settings, task) {
   const mode = resolveGroupMode(settings)
 
   if (mode === 'artist-album') {
-    const artist = sanitizePathSegment(pickArtistSegment(task)) || '未知歌手'
-    const album = sanitizePathSegment(task.album || '') || '未知专辑'
-    return joinDownloadGroupSegments(base, [artist, album])
+    const artist = usablePathSegment(pickArtistSegment(task))
+    const album = pickAlbumSegment(task)
+    // 有专辑无歌手：仍按专辑落一层，避免再落到「未知专辑」
+    if (artist && album) return joinDownloadGroupSegments(base, [artist, album])
+    if (artist) return joinDownloadGroupSegments(base, [artist])
+    if (album) return joinDownloadGroupSegments(base, [album])
+    return base
   }
 
-  const segment = sanitizePathSegment(pickGroupSegment(mode, task))
+  const segment = usablePathSegment(pickGroupSegment(mode, task))
   if (!segment) return base
   return joinDownloadGroupSegments(base, [segment])
 }

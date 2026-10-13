@@ -2,8 +2,18 @@ import { trimPlayUrlCache, getPlayUrlCacheStats } from './playUrlCache.js'
 import { trimAlbumCache, getAlbumCacheStats } from './albumCache.js'
 import { trimPlaylistCache, getPlaylistCacheStats } from './playlistCache.js'
 
-const RSS_SOFT_LIMIT_MB = 384
-const RSS_HARD_LIMIT_MB = 512
+function readLimitMb(envKey, fallback) {
+  const raw = Number.parseInt(String(process.env[envKey] || ''), 10)
+  if (Number.isFinite(raw) && raw >= 128) return raw
+  return fallback
+}
+
+/** 默认比旧版 384/512 放宽；可用环境变量覆盖 */
+const RSS_SOFT_LIMIT_MB = readLimitMb('LEMON_RSS_SOFT_MB', 768)
+const RSS_HARD_LIMIT_MB = Math.max(
+  RSS_SOFT_LIMIT_MB + 128,
+  readLimitMb('LEMON_RSS_HARD_MB', 1024),
+)
 
 const guardState = {
   lastCheckAt: null,
@@ -58,7 +68,7 @@ export function startMemoryGuard(intervalMs = 5 * 60 * 1000) {
     try {
       const result = runMemoryGuard()
       if (result.trimmed) {
-        console.log(`[memory] RSS ${result.rssMB}MB，已清理试听/专辑/歌单缓存`)
+        console.log(`[memory] RSS ${result.rssMB}MB，已清理试听/专辑/歌单缓存（软限 ${RSS_SOFT_LIMIT_MB} / 硬限 ${RSS_HARD_LIMIT_MB}）`)
       }
     } catch (e) {
       console.warn('[memory] guard failed:', e.message)

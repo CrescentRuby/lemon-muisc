@@ -29,6 +29,19 @@ function guardSource(req, source) {
   }
 }
 
+function sendFeed(res, result) {
+  // 命中磁盘/内存时可被浏览器短缓存；未命中仍可缓存极短时间减少连点
+  res.setHeader('Cache-Control', result.cached
+    ? (result.stale ? 'private, max-age=30' : 'private, max-age=120')
+    : 'private, max-age=15')
+  res.json({
+    ok: true,
+    data: result.data,
+    cached: result.cached,
+    stale: result.stale,
+  })
+}
+
 discoverRouter.get('/regions', (req, res) => {
   const { source = 'tx', kind = 'songs' } = req.query
   if (!availableSources(req)[source]) {
@@ -49,12 +62,7 @@ discoverRouter.get('/new-songs', async (req, res) => {
       TIMEOUT_MS,
       '获取新歌超时，请稍后重试',
     )))
-    res.json({
-      ok: true,
-      data: result.data,
-      cached: result.cached,
-      stale: result.stale,
-    })
+    sendFeed(res, result)
   } catch (e) {
     res.status(e.status || 500).json({ error: formatUserError(e, '获取新歌失败，请稍后重试') })
   }
@@ -72,12 +80,7 @@ discoverRouter.get('/new-albums', async (req, res) => {
       TIMEOUT_MS,
       '获取新碟超时，请稍后重试',
     )))
-    res.json({
-      ok: true,
-      data: result.data,
-      cached: result.cached,
-      stale: result.stale,
-    })
+    sendFeed(res, result)
   } catch (e) {
     res.status(e.status || 500).json({ error: formatUserError(e, '获取新碟失败，请稍后重试') })
   }
@@ -93,12 +96,7 @@ discoverRouter.get('/toplists', async (req, res) => {
       TIMEOUT_MS,
       '获取排行榜超时，请稍后重试',
     )))
-    res.json({
-      ok: true,
-      data: result.data,
-      cached: result.cached,
-      stale: result.stale,
-    })
+    sendFeed(res, result)
   } catch (e) {
     res.status(e.status || 500).json({ error: formatUserError(e, '获取排行榜失败，请稍后重试') })
   }
@@ -117,12 +115,7 @@ discoverRouter.get('/toplist', async (req, res) => {
       TIMEOUT_MS,
       '获取榜单详情超时，请稍后重试',
     )))
-    res.json({
-      ok: true,
-      data: result.data,
-      cached: result.cached,
-      stale: result.stale,
-    })
+    sendFeed(res, result)
   } catch (e) {
     res.status(e.status || 500).json({ error: formatUserError(e, '获取榜单详情失败，请稍后重试') })
   }

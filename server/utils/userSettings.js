@@ -53,6 +53,8 @@ export const USER_SETTING_KEYS = new Set([
   'player.visualizer',
   'player.playQuality',
   'player.smoothStream',
+  'player.audioCacheEnabled',
+  'player.audioCacheMaxMB',
   'playlist.remoteSyncDays',
   'download.usePersonalSavePath',
   'download.savePathPersonal',

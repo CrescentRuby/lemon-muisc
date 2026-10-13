@@ -5,11 +5,16 @@ import { getMemoryGuardStatus } from '../utils/memoryGuard.js'
 
 export const healthRouter = Router()
 
-healthRouter.get('/', (_req, res) => {
+healthRouter.get('/', async (_req, res) => {
   const mem = process.memoryUsage()
   const scan = getLibraryScanStatus()
   const downloads = getDownloadQueueStats()
   const memoryGuard = getMemoryGuardStatus()
+  let discoverWarm = null
+  try {
+    const { getDiscoverFeedWarmStatus } = await import('../utils/discoverFeedWarm.js')
+    discoverWarm = getDiscoverFeedWarmStatus()
+  } catch {}
   res.json({
     ok: true,
     uptime: Math.floor(process.uptime()),
@@ -24,5 +29,6 @@ healthRouter.get('/', (_req, res) => {
       phase: scan.phase || 'idle',
     },
     downloads,
+    discoverWarm,
   })
 })

@@ -79,3 +79,27 @@ export function isConstrainedNetwork() {
   } catch {}
   return false
 }
+
+/** 判断主机名是否为常见局域网 / 本机地址（用于 NAS 内网访问） */
+export function isLikelyLanHost(hostname) {
+  const h = String(hostname || '').trim().toLowerCase()
+  if (!h || h === 'localhost') return true
+  if (h.endsWith('.local')) return true
+  if (h === '[::1]' || h === '::1') return true
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (!m) return false
+  const a = Number(m[1])
+  const b = Number(m[2])
+  if (a === 10) return true
+  if (a === 127) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  return false
+}
+
+/** 当前页面是否通过局域网地址打开（与服务器同网段访问 NAS 时直出本地文件） */
+export function isLikelyLanAccess() {
+  if (typeof window === 'undefined') return false
+  return isLikelyLanHost(window.location.hostname)
+}

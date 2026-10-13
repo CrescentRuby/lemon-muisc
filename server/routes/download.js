@@ -48,7 +48,8 @@ import { buildSourceFallbackOffer } from '../utils/sourceFallback.js'
 import { extractMusicUrl } from '../utils/sourceResult.js'
 import { notifyLibraryChanged, notifyLibraryRemoved } from '../utils/libraryNotify.js'
 import { scanBatchAndCache, removeCachePaths } from '../utils/libraryCache.js'
-import { resolveDownloadGroupDir } from '../utils/downloadPath.js'
+import { resolveDownloadGroupDir, resolveDownloadGroupMode } from '../utils/downloadPath.js'
+import { isPlaceholderName } from '../utils/filenameParse.js'
 import {
   resolveExistFileMode,
   findExistingSameNameFiles,
@@ -1638,6 +1639,34 @@ function resolveTaskFilePath(task, settings, ext) {
   return path.join(groupDir, fileName)
 }
 
+/** 按专辑分组时，落盘前尽量用专辑详情补全真实专辑名 */
+async function ensureTaskAlbumForGrouping(task, meta, settings) {
+  const mode = resolveDownloadGroupMode(settings || {})
+  if (mode !== 'album' && mode !== 'artist-album') return
+  const current = String(task?.album || meta?.album || '').trim()
+  if (current && !isPlaceholderName(current)) {
+    if (!String(task.album || '').trim()) task.album = current
+    return
+  }
+  try {
+    const enriched = await resolveDownloadEmbedMeta(task, meta, { timeoutMs: 5000 })
+    const album = String(enriched?.album || '').trim()
+    if (!album || isPlaceholderName(album)) return
+    task.album = album
+    meta.album = album
+    if (enriched.albumArtist && !String(task.albumArtist || '').trim()) {
+      task.albumArtist = enriched.albumArtist
+      meta.albumArtist = enriched.albumArtist
+    }
+    try {
+      getDB().prepare('UPDATE download_tasks SET album = ? WHERE id = ?').run(album, task.id)
+    } catch {}
+    saveTaskMeta(task.id, meta)
+  } catch {
+    // 补全失败则不建「未知专辑」目录，落到歌手目录或下载根目录
+  }
+}
+
 function finalizePartFile(partPath, filePath) {
   safeUnlink(filePath)
   if (!fs.existsSync(partPath)) throw new Error('下载文件不完整')
@@ -1736,6 +1765,10 @@ async function downloadTask(task, settings, abortSignal = null) {
   if (!String(task.album || '').trim() && meta.album) {
     task.album = meta.album
   }
+  // 占位专辑名当作空，避免分组落到「未知专辑」
+  if (isPlaceholderName(task.album)) task.album = ''
+  if (isPlaceholderName(meta.album)) meta.album = ''
+  await ensureTaskAlbumForGrouping(task, meta, settings)
   const quality = task.quality || '320k'
   let lastError = null
   let lastAttemptPath = ''

@@ -29,7 +29,7 @@ GET /api/v1
 {
   "ok": true,
   "name": "Lemon Music",
-  "appVersion": "1.2.17.4",
+  "appVersion": "1.2.17.5",
   "apiVersion": 1,
   "openapi": "http://host:7983/api/openapi.json",
   "docs": "http://host:7983/api/docs",

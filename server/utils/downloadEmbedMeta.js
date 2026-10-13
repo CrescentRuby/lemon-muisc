@@ -2,6 +2,7 @@ import { fetchAlbum } from '../musicSdk.js'
 import { buildAlbumCacheKey, getOrFetchAlbum } from './albumCache.js'
 import { withTimeout } from './asyncLimit.js'
 import { joinArtists } from './artistTag.js'
+import { isPlaceholderName } from './filenameParse.js'
 
 /** 从发行日期/年份字段提取四位年份 */
 export function normalizeTagYear(value) {
@@ -90,6 +91,7 @@ export async function resolveDownloadEmbedMeta(task, meta = {}, { timeoutMs = 80
   const hadExplicitAlbumArtist = Boolean(String(task?.albumArtist || m.albumArtist || '').trim())
   let albumArtist = joinArtists(task?.albumArtist || m.albumArtist || task?.singer || '')
   let album = String(task?.album || m.album || '').trim()
+  if (isPlaceholderName(album)) album = ''
 
   const needFetch = !year || !genre || !comment || !hadExplicitAlbumArtist || !album
   const albumId = String(m.albumId || m.albumMid || m.albummid || task?.albumId || task?.albumMid || '').trim()
@@ -110,7 +112,10 @@ export async function resolveDownloadEmbedMeta(task, meta = {}, { timeoutMs = 80
       if (!hadExplicitAlbumArtist && info.author) {
         albumArtist = joinArtists(info.author) || albumArtist
       }
-      if (!album && info.name) album = String(info.name).trim()
+      if (!album && info.name) {
+        const fetched = String(info.name).trim()
+        if (fetched && !isPlaceholderName(fetched)) album = fetched
+      }
     } catch {
       // 专辑详情失败不影响下载与已有标签写入
     }
