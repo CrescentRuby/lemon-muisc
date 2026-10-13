@@ -60,6 +60,8 @@ const props = defineProps({
   block: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   minWidth: { type: String, default: '' },
+  /** 菜单 z-index；嵌套在高层弹窗内时需调高，避免被挡住 */
+  menuZIndex: { type: [Number, String], default: 1300 },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -87,7 +89,7 @@ function updateMenuPosition() {
     top: `${rect.bottom + 6}px`,
     left: `${left}px`,
     minWidth: `${rect.width}px`,
-    zIndex: 1300,
+    zIndex: Number(props.menuZIndex) || 1300,
   }
 }
 

@@ -3,9 +3,9 @@
     <div class="page-header" :class="{ 'page-header--embed': embedded }">
       <div v-if="!embedded">
         <div class="page-title">标签编辑</div>
-        <div class="page-subtitle">「补全缺失」自动补本目录空字段。「整理标签」在下拉窗勾选要覆盖的字段；默认识别文件名，也可同时用已有歌手/歌名搜索。</div>
+        <div class="page-subtitle">「补全缺失」自动补本目录空字段。「整理标签」按左侧设置里勾选的字段覆盖写入；默认识别文件名，也可同时用已有歌手/歌名搜索。</div>
       </div>
-      <div v-else class="embed-toolbar-hint">「补全缺失」只补空字段；「整理标签」下拉勾选字段后覆盖写入</div>
+      <div v-else class="embed-toolbar-hint">「补全缺失」只补空字段；「整理标签」按左侧设置勾选字段覆盖写入</div>
       <div class="header-actions">
         <button class="btn-primary btn-sm" @click="saveAll" :disabled="!hasChanges || saving">
           {{ saving ? '保存中...' : '保存全部修改' }}
@@ -30,6 +30,24 @@
               :class="{ active: browseMode === 'artist' }"
               @click="switchBrowseMode('artist')"
             >按歌手</button>
+          </div>
+          <div class="panel-title-actions">
+            <div class="tag-settings-wrap" ref="organizeWrapRef">
+              <button
+                type="button"
+                class="tag-settings-btn"
+                :class="{ open: showOrganizeMenu }"
+                title="标签编辑选项：整理时写入哪些字段"
+                :aria-expanded="showOrganizeMenu"
+                aria-label="标签编辑选项"
+                @click.stop="toggleTagSettings"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -237,18 +255,14 @@
             >
               {{ matching ? '匹配中...' : `补全缺失 (${missingMatchCount})` }}
             </button>
-            <div class="organize-wrap" ref="organizeWrapRef">
-              <button
-                class="btn-ghost btn-sm"
-                :class="{ open: showOrganizeMenu }"
-                :disabled="!selectedFiles.length || matching || tagChecking"
-                title="勾选要覆盖的字段，再按文件名（可选加上已有歌手/歌名）搜索并保存"
-                :aria-expanded="showOrganizeMenu"
-                @click.stop="toggleOrganizeMenu"
-              >
-                {{ matching ? '匹配中...' : `整理标签 (${selectedFiles.length})` }}
-              </button>
-            </div>
+            <button
+              class="btn-ghost btn-sm"
+              :disabled="!selectedFiles.length || matching || tagChecking"
+              title="按左侧设置勾选的字段覆盖写入（仅处理列表中已勾选的文件）"
+              @click="startOrganizeTags"
+            >
+              {{ matching ? '匹配中...' : `整理标签 (${selectedFiles.length})` }}
+            </button>
             <button
               class="btn-ghost btn-sm"
               :disabled="tagChecking || matching || (!selectedFiles.length && !editingFile)"
@@ -632,12 +646,10 @@
 
         <div v-if="editForm && !loadingDetail" class="edit-actions">
           <div v-if="isBatchMode" class="batch-field-picker">
-            <div class="batch-field-label">批量写入字段（默认不改歌名）</div>
-            <div class="batch-field-grid">
-              <label v-for="item in batchFieldOptions" :key="item.key" class="batch-field-item">
-                <input v-model="batchApplyFields[item.key]" type="checkbox" />
-                <span>{{ item.label }}</span>
-              </label>
+            <div class="batch-field-label">批量写入字段（与左侧设置一致，默认不改歌名）</div>
+            <div class="batch-field-summary">
+              {{ selectedRewriteFieldLabels || '未勾选字段，请先打开左侧设置' }}
+              <button type="button" class="btn-ghost btn-sm" @click="toggleTagSettings">改选项</button>
             </div>
           </div>
           <div class="rename-on-save">
@@ -705,12 +717,12 @@
         :class="{ sheet: organizeAsSheet }"
         :style="organizeMenuStyle"
         role="dialog"
-        aria-label="整理标签"
+        aria-label="标签编辑选项"
         @click.stop
       >
         <div class="organize-pop-head">
-          <div class="organize-pop-title">写入字段（默认不改歌名）</div>
-          <div class="organize-pop-meta">{{ selectedFiles.length }} 首 · {{ organizeSourceLabel }}</div>
+          <div class="organize-pop-title">标签编辑选项</div>
+          <div class="organize-pop-meta">整理时仅写入勾选字段</div>
         </div>
         <div class="organize-field-grid">
           <label v-for="item in batchFieldOptions" :key="item.key" class="organize-field-item" :title="item.label">
@@ -722,9 +734,24 @@
           <input v-model="rewriteUseExistingTags" type="checkbox" />
           <span>同时用已有歌手/歌名搜索（推荐，与右侧网络获取一致）</span>
         </label>
+        <div class="organize-rename-opt">
+          <label class="rename-on-save-check">
+            <input v-model="renameOnSave" type="checkbox" />
+            <span>保存时同步改文件名为</span>
+          </label>
+          <AppSelect
+            v-model="renamePattern"
+            class="rename-pattern-select"
+            :options="renamePatternOptions"
+            size="sm"
+            min-width="8.5rem"
+            title="文件名格式"
+            :menu-z-index="1500"
+            :disabled="!renameOnSave"
+          />
+        </div>
         <div class="organize-pop-actions">
-          <button type="button" class="btn-ghost btn-sm" @click="closeOrganizeMenu">取消</button>
-          <button type="button" class="btn-primary btn-sm" @click="confirmOrganizeTags">开始整理</button>
+          <button type="button" class="btn-primary btn-sm" @click="closeOrganizeMenu">完成</button>
         </div>
       </div>
     </Teleport>
@@ -1035,10 +1062,11 @@ function updateOrganizeMenuPosition() {
     return
   }
 
-  const width = Math.min(312, vw - pad * 2)
-  let left = rect.right - width
+  const width = Math.min(320, vw - pad * 2)
+  // 左侧齿轮：优先向右展开
+  let left = rect.left
   left = Math.max(pad, Math.min(left, vw - width - pad))
-  const menuHeight = menu.offsetHeight || 300
+  const menuHeight = menu.offsetHeight || 360
   const spaceBelow = vh - rect.bottom - pad
   const spaceAbove = rect.top - pad
   const placeBelow = spaceBelow >= Math.min(menuHeight, 220) || spaceBelow >= spaceAbove
@@ -1053,18 +1081,24 @@ function updateOrganizeMenuPosition() {
     top: `${top}px`,
     left: `${left}px`,
     width: `${width}px`,
-    maxHeight: `${Math.min(maxHeight, 420)}px`,
+    maxHeight: `${Math.min(maxHeight, 480)}px`,
     zIndex: 1400,
   }
 }
 
 function onOrganizeDocClick(e) {
-  if (organizeWrapRef.value?.contains(e.target) || organizeMenuRef.value?.contains(e.target)) return
+  const t = e.target
+  if (organizeWrapRef.value?.contains(t) || organizeMenuRef.value?.contains(t)) return
+  // AppSelect 菜单 Teleport 到 body，点选项时勿关掉设置窗
+  if (t?.closest?.('.app-select-menu')) return
   closeOrganizeMenu()
 }
 
 function onOrganizeKeydown(e) {
-  if (e.key === 'Escape') closeOrganizeMenu()
+  if (e.key !== 'Escape') return
+  // 先让下拉自行收起，避免 Esc 直接关掉整个设置窗
+  if (document.querySelector('.app-select-menu')) return
+  closeOrganizeMenu()
 }
 
 function bindOrganizeMenuEvents() {
@@ -1090,8 +1124,6 @@ watch(showOrganizeMenu, async (open) => {
   updateOrganizeMenuPosition()
   bindOrganizeMenuEvents()
 })
-
-const organizeSourceLabel = computed(() => sourceOptions.find(o => o.value === fetchSource.value)?.label || fetchSource.value)
 
 watch(
   () => ({ ...rewriteFieldFlags, useExistingTags: rewriteUseExistingTags.value }),
@@ -1440,16 +1472,11 @@ const batchFieldOptions = [
   { key: 'lyric', label: '歌词' },
   { key: 'cover', label: '封面' },
 ]
-const batchApplyFields = reactive({
-  title: false,
-  artist: true,
-  albumArtist: true,
-  album: true,
-  year: true,
-  genre: true,
-  comment: false,
-  lyric: false,
-  cover: false,
+const selectedRewriteFieldLabels = computed(() => {
+  return batchFieldOptions
+    .filter((item) => rewriteFieldFlags[item.key])
+    .map((item) => item.label)
+    .join('、')
 })
 const fetchIntentLabel = computed(() => {
   if (fetchIntent.value === 'cover') return '网络获取封面'
@@ -1864,15 +1891,7 @@ function autoMatchMissing() {
   runTagMatch(targets)
 }
 
-function toggleOrganizeMenu() {
-  if (!selectedFiles.value.length) {
-    showToast('请先勾选要整理的文件', 'info')
-    return
-  }
-  if (matching.value) {
-    showToast('已有自动匹配任务进行中', 'info')
-    return
-  }
+function toggleTagSettings() {
   showOrganizeMenu.value = !showOrganizeMenu.value
 }
 
@@ -1880,18 +1899,23 @@ function closeOrganizeMenu() {
   showOrganizeMenu.value = false
 }
 
-function confirmOrganizeTags() {
+function startOrganizeTags() {
   const targets = selectedFiles.value
   if (!targets.length) {
     showToast('请先勾选要整理的文件', 'info')
     return
   }
-  const fields = selectedRewriteFields()
-  if (!fields.length) {
-    showToast('请至少勾选一项要整理的内容', 'info')
+  if (matching.value) {
+    showToast('已有自动匹配任务进行中', 'info')
     return
   }
-  showOrganizeMenu.value = false
+  const fields = selectedRewriteFields()
+  if (!fields.length) {
+    showToast('请先在左侧设置中勾选要写入的字段', 'info')
+    showOrganizeMenu.value = true
+    return
+  }
+  closeOrganizeMenu()
   runTagMatch(targets, {
     rewriteAll: true,
     forceOverwrite: true,
@@ -2600,13 +2624,10 @@ async function applyToFiles({ silent = false } = {}) {
   // 多选时：必须明确「应用到选中」，并二次确认，防止误把同一首歌信息刷到全部文件
   if (isBatchMode.value) {
     const n = selectedFiles.value.length
-    const fields = new Set(
-      Object.entries(batchApplyFields)
-        .filter(([, on]) => on)
-        .map(([key]) => key),
-    )
+    const fields = new Set(selectedRewriteFields())
     if (!fields.size) {
-      showToast('请先勾选要批量写入的字段', 'info')
+      showToast('请先在左侧设置中勾选要批量写入的字段', 'info')
+      showOrganizeMenu.value = true
       return
     }
     const fieldLabels = batchFieldOptions
@@ -3559,14 +3580,31 @@ function showToast(text, type = 'info') {
   min-width: 0;
   justify-content: flex-end;
 }
-.organize-wrap {
+.tag-settings-wrap {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
 }
-.organize-wrap > .btn-ghost.open {
-  border-color: var(--accent);
+.tag-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-elevated, var(--bg));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tag-settings-btn:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+.tag-settings-btn.open {
   color: var(--accent);
+  border-color: var(--accent);
 }
 .organize-backdrop {
   display: none;
@@ -3641,6 +3679,14 @@ function showToast(text, type = 'info') {
   cursor: pointer;
   user-select: none;
 }
+.organize-rename-opt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
 .organize-pop-actions {
   display: flex;
   justify-content: flex-end;
@@ -3676,8 +3722,7 @@ function showToast(text, type = 'info') {
 .file-toolbar-actions .btn-ghost,
 .file-toolbar-meta .check-all,
 .file-toolbar-meta :deep(.app-select),
-.file-toolbar-actions :deep(.app-select),
-.file-toolbar-actions .organize-wrap {
+.file-toolbar-actions :deep(.app-select) {
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -4366,22 +4411,17 @@ tr.playing .play-btn,
   color: var(--text-muted);
   margin-bottom: 8px;
 }
-.batch-field-grid {
+.batch-field-summary {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-}
-.batch-field-item {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 12px;
   color: var(--text-secondary);
-  cursor: pointer;
-  user-select: none;
+  line-height: 1.4;
 }
-.batch-field-item input {
-  accent-color: var(--accent);
+.batch-field-summary .btn-ghost {
+  flex-shrink: 0;
 }
 .rename-on-save {
   display: flex;
@@ -4566,8 +4606,7 @@ tr.playing .play-btn,
     justify-content: stretch;
   }
   .file-toolbar-actions .btn-ghost,
-  .file-toolbar-actions .btn-primary,
-  .file-toolbar-actions .organize-wrap {
+  .file-toolbar-actions .btn-primary {
     flex: unset;
     width: 100%;
     min-width: 0;
@@ -4577,12 +4616,6 @@ tr.playing .play-btn,
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
-  }
-  .file-toolbar-actions .organize-wrap > .btn-ghost {
-    width: 100%;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .file-toolbar-actions :deep(.app-select) {
     grid-column: 1 / -1;
@@ -4717,8 +4750,7 @@ tr.playing .play-btn,
     max-width: 100%;
   }
   .file-toolbar-actions .btn-ghost,
-  .file-toolbar-actions .btn-primary,
-  .file-toolbar-actions .organize-wrap > .btn-ghost {
+  .file-toolbar-actions .btn-primary {
     min-height: 36px;
     padding: 8px 6px;
     font-size: 12px;
