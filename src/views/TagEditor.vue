@@ -360,6 +360,14 @@
                     <svg v-if="isFileInQueue(f)" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                     <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   </button>
+                  <button
+                    class="delete-file-btn"
+                    title="从磁盘删除"
+                    :disabled="deletingPath === f.filePath"
+                    @click="deleteFile(f)"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -420,6 +428,14 @@
                 <svg v-if="isFileInQueue(f)" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                 <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button>
+              <button
+                class="delete-file-btn"
+                title="从磁盘删除"
+                :disabled="deletingPath === f.filePath"
+                @click="deleteFile(f)"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -456,6 +472,15 @@
               title="修改磁盘文件名"
             >
               {{ renamingFile ? '改名中…' : '改文件名' }}
+            </button>
+            <button
+              v-if="!isBatchMode && editingFile"
+              class="btn-ghost btn-sm play-inline delete-inline-btn"
+              :disabled="Boolean(deletingPath)"
+              @click="deleteFile(editingFile)"
+              title="从磁盘永久删除当前文件"
+            >
+              {{ deletingPath === editingFile.filePath ? '删除中…' : '删除' }}
             </button>
             <button
               v-if="showMobileEditSheet"
@@ -973,6 +998,7 @@ const missingFilter = ref('all')
 const selectAll = ref(false)
 const saving = ref(false)
 const renamingFile = ref(false)
+const deletingPath = ref('')
 /** 保存标签时同步改文件名（默认开，便于清掉 Unknown） */
 const renameOnSave = ref(true)
 /** title-artist = 歌名 - 歌手；artist-title = 歌手 - 歌名 */
@@ -1976,6 +2002,66 @@ async function renameEditingFile(targetFile = null) {
 function renameFileFromList(f) {
   if (!f?.filePath || matching.value || renamingFile.value) return
   renameEditingFile(f)
+}
+
+/** 从磁盘永久删除文件（列表行 / 右侧面板共用） */
+async function deleteFile(targetFile = null) {
+  const f = targetFile || editingFile.value
+  if (!f?.filePath || deletingPath.value || matching.value) return
+  if (f._modified) {
+    const discard = await appConfirm({
+      title: '未保存的标签修改',
+      message: '该文件有未保存的标签修改，删除后这些改动会一并丢失。',
+      hint: '文件本身也将被物理删除，此操作不可恢复。',
+      confirmText: '仍要删除',
+      danger: true,
+    })
+    if (!discard) return
+  }
+  const ok = await appConfirm({
+    title: '永久删除文件',
+    message: `确定从磁盘永久删除？\n\n${f.fileName || f.filePath}`,
+    hint: '文件将被物理删除，并自动从音乐库与歌单中移除，此操作不可恢复。',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  deletingPath.value = f.filePath
+  try {
+    const res = await api.library.deleteFiles([f.filePath])
+    const failed = res?.data?.failed || []
+    if (failed.length) throw new Error(failed[0]?.error || '删除失败')
+    removeFileFromList(f.filePath)
+    showToast(`已删除：${f.fileName || f.filePath}`, 'success')
+  } catch (e) {
+    showToast(e.message || '删除失败', 'error')
+  } finally {
+    deletingPath.value = ''
+  }
+}
+
+/** 删除成功后：移出列表 / 清理匹配补丁 / 切到相邻文件 / 持久化会话 */
+function removeFileFromList(filePath) {
+  const idx = files.value.findIndex(row => row.filePath === filePath)
+  files.value = files.value.filter(row => row.filePath !== filePath)
+  try { clearTagMatchPatchesForPaths([filePath]) } catch {}
+  if (editingFile.value?.filePath === filePath) {
+    const next = files.value[Math.min(Math.max(idx, 0), files.value.length - 1)]
+    if (next) {
+      openEdit(next)
+    } else {
+      editingFile.value = null
+      editForm.value = null
+      loadingDetail.value = false
+      tagCheckResult.value = null
+    }
+  }
+  saveTagEditorSession({
+    mode: browseMode.value,
+    activeDir: activeDir.value,
+    activeArtist: activeArtist.value,
+    files: files.value,
+  })
 }
 
 function applyRenameToLocalFile(from, to, fileName, parsed) {
@@ -3786,7 +3872,7 @@ tbody tr td.cell-missing {
 
 .col-check { width: 32px; }
 .col-play {
-  width: 72px;
+  width: 104px;
   white-space: nowrap;
   text-align: right;
   position: sticky;
@@ -3834,6 +3920,34 @@ tbody tr.playing .col-play {
   color: var(--success);
   border-color: var(--success);
   background: rgba(52, 199, 89, 0.1);
+}
+.delete-file-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  vertical-align: middle;
+  margin-right: 4px;
+  cursor: pointer;
+}
+.delete-file-btn:hover:not(:disabled) {
+  color: var(--error);
+  border-color: var(--error);
+  background: rgba(255, 59, 48, 0.1);
+}
+.delete-file-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.delete-inline-btn:hover:not(:disabled) {
+  color: var(--error);
+  border-color: var(--error);
 }
 tr.playing .play-btn,
 .mobile-file-row.playing .play-btn {
@@ -3921,7 +4035,8 @@ tr.playing .play-btn,
   flex-shrink: 0;
 }
 .mobile-file-actions .play-btn,
-.mobile-file-actions .queue-add-btn {
+.mobile-file-actions .queue-add-btn,
+.mobile-file-actions .delete-file-btn {
   width: 34px;
   height: 34px;
   margin-right: 0;

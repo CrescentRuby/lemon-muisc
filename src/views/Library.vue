@@ -349,7 +349,7 @@
                 :singer="song.singer"
                 :album="song.album"
               />
-              <div class="song-tags" :title="formatTrackTags({ ...song, album: '' })">{{ formatTrackTags({ ...song, album: '' }) }}</div>
+              <div class="song-tags" :title="formatTrackTags({ ...song, album: '' }, { audioSpec: true })">{{ formatTrackTags({ ...song, album: '' }, { audioSpec: true }) }}</div>
             </div>
             <MobileRowActions
               :open="actionsOpenKey === song.key"
@@ -380,6 +380,15 @@
                 @click.stop="toggleFavorite(song)"
               >
                 <svg viewBox="0 0 24 24" width="16" height="16" :fill="isFavorite(song) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </button>
+              <button
+                type="button"
+                class="icon-action-btn danger"
+                title="删除"
+                :disabled="deleteBusy"
+                @click.stop="onDeleteSong(song)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
               </button>
             </MobileRowActions>
           </div>
@@ -446,6 +455,7 @@ import { formatTrackTags, formatAlbumTags } from '../utils/format.js'
 import { getTrackFilePath } from '../utils/trackPath.js'
 import { countAutoFillColumns } from '../utils/grid.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused, startPlayTracks } from '../stores/player.js'
+import { appConfirm } from '../stores/appDialog.js'
 import {
   libraryTracks, libraryTrackTotal, libraryLoading, libraryMetaLoading, libraryLoadProgress,
   libraryScanning, libraryScanPhase, libraryScanCurrent, libraryScanTotal, libraryScanPercent,
@@ -575,6 +585,7 @@ function toggleRowActions(key) {
 const tappingSongKey = ref('')
 const coverPendingPauseKey = ref('')
 const toast = ref(null)
+const deleteBusy = ref(false)
 const loadProgress = libraryLoadProgress
 const songColumns = computed(() => librarySongColumns.value)
 const scanButtonLabel = computed(() => {
@@ -977,6 +988,40 @@ function onAddedToPlaylist({ playlist, duplicate }) {
   pickPlaylistTrack.value = null
   if (duplicate) showToast('歌曲已在歌单中', 'info')
   else showToast(`已加入歌单：${playlist?.name || ''}`, 'success')
+}
+
+async function onDeleteSong(song) {
+  if (!song || deleteBusy.value) return
+  const filePath = getTrackFilePath(song)
+  if (!filePath) {
+    showToast('未找到该歌曲的本地文件', 'error')
+    return
+  }
+  const ok = await appConfirm({
+    title: '删除歌曲',
+    message: `确定从磁盘永久删除「${song.name}」？`,
+    hint: '文件将被物理删除，此操作不可恢复。',
+    confirmText: '删除',
+    danger: true,
+    cover: song.picUrl || song.img || '',
+  })
+  if (!ok) return
+  deleteBusy.value = true
+  try {
+    const res = await api.library.deleteFiles([filePath])
+    const failed = res?.data?.failed || []
+    if (failed.length) {
+      showToast(failed[0]?.error || '删除失败', 'error')
+      return
+    }
+    actionsOpenKey.value = ''
+    showToast(`已删除：${song.name}`, 'success')
+    await Promise.all([loadSongPage(), loadBrowsePreviews(), loadScanSummary()])
+  } catch (e) {
+    showToast(e?.message || '删除失败', 'error')
+  } finally {
+    deleteBusy.value = false
+  }
 }
 
 async function playDailyMix() {
@@ -1968,7 +2013,8 @@ function showToast(text, type = 'info') {
   }
   .song-title { font-size: 15px; }
   .song-artist { font-size: 12px; }
-  .song-tags { display: none; }
+  /* 位深/采样率在窄屏也保留展示 */
+  .song-tags { display: block; font-size: 11px; margin-top: 3px; }
   .song-actions,
   .mobile-row-actions { gap: 2px; }
   .song-actions .icon-action-btn,
