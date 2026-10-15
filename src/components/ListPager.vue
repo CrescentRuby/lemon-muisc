@@ -22,11 +22,20 @@
           <polyline points="15 18 9 12 15 6"/>
         </svg>
       </button>
-      <span class="list-pager-current" aria-current="page">{{ page }}</span>
+      <button
+        v-for="n in visiblePages"
+        :key="n"
+        type="button"
+        class="list-pager-page"
+        :class="{ active: n === page }"
+        :aria-current="n === page ? 'page' : undefined"
+        :aria-label="`第 ${n} 页`"
+        @click="go(n)"
+      >{{ n }}</button>
       <button
         type="button"
         class="list-pager-btn"
-        :disabled="page >= totalPages"
+        :disabled="page >= resolvedTotalPages"
         aria-label="下一页"
         @click="go(page + 1)"
       >
@@ -85,6 +94,22 @@ const show = computed(() => {
   return false
 })
 
+/** 默认最多显示 3 个页码（条数够才出 2、3 页） */
+const visiblePages = computed(() => {
+  const total = resolvedTotalPages.value
+  const current = Math.min(total, Math.max(1, Number(props.page) || 1))
+  const windowSize = Math.min(3, total)
+  let start = Math.max(1, current - Math.floor((windowSize - 1) / 2))
+  let end = start + windowSize - 1
+  if (end > total) {
+    end = total
+    start = Math.max(1, end - windowSize + 1)
+  }
+  const pages = []
+  for (let n = start; n <= end; n++) pages.push(n)
+  return pages
+})
+
 function go(next) {
   const p = Math.min(resolvedTotalPages.value, Math.max(1, next))
   if (p === props.page) return
@@ -140,20 +165,32 @@ function onSizeChange(value) {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.list-pager-current {
+.list-pager-page {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 34px;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, var(--bg-card));
+  color: var(--text-secondary);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.list-pager-page:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.list-pager-page.active {
+  border-color: transparent;
   color: #fff;
   background: var(--accent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+  cursor: default;
 }
 .list-pager-size :deep(.app-select-trigger) {
   height: 34px;
