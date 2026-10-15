@@ -808,7 +808,9 @@ const trackTotalPages = computed(() => Math.max(1, Math.ceil((detailTracks.value
 const listStart = computed(() => (trackPage.value - 1) * trackPageSize.value)
 const pagedTracks = computed(() => {
   const tracks = detailTracks.value || []
-  return tracks.slice(listStart.value, listStart.value + trackPageSize.value)
+  const size = Math.max(1, Number(trackPageSize.value) || 20)
+  const start = Math.max(0, (Number(trackPage.value) || 1) - 1) * size
+  return tracks.slice(start, start + size)
 })
 
 watch(trackPageSize, () => {

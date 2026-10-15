@@ -19,7 +19,7 @@ export function usePagedTrackRows(getTracks, { pageSize = 50, enabled = () => tr
   const displayRows = computed(() => {
     const tracks = getTracks()
     const size = resolvedSize.value
-    if (!enabled() || tracks.length <= size) {
+    if (!enabled()) {
       return tracks.map((item, i) => ({ item, i }))
     }
     const start = (page.value - 1) * size
