@@ -188,15 +188,14 @@
       </button>
       <button
         v-if="currentPlaying"
+        ref="dlnaBtnRef"
         class="ctrl-btn ctrl-cast desktop-extra"
         type="button"
+        :class="{ active: showDlnaCast }"
         title="投屏到 DLNA"
-        @click="showDlnaCast = true"
+        @click="onToggleDlnaCast"
       >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
-          <line x1="2" y1="20" x2="2.01" y2="20"/>
-        </svg>
+        <CastIcon :size="16" />
       </button>
       <button
         v-if="currentPlaying"
@@ -333,13 +332,11 @@
           <button
             type="button"
             class="more-item"
+            :class="{ active: showDlnaCast }"
             :disabled="!currentPlaying"
             @click="onMoreOpenDlna"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
-              <line x1="2" y1="20" x2="2.01" y2="20"/>
-            </svg>
+            <CastIcon :size="16" />
             <span>投屏到 DLNA</span>
           </button>
           <button
@@ -520,7 +517,14 @@
       @close="pickPlaylistTrack = null"
       @added="onAddedToPlaylist"
     />
-    <DlnaCastModal :open="showDlnaCast" @close="showDlnaCast = false" />
+    <div
+      v-if="showDlnaCast"
+      class="queue-panel card"
+      ref="dlnaPanelRef"
+      @click.stop
+    >
+      <DlnaCastModal :open="showDlnaCast" @close="showDlnaCast = false" />
+    </div>
   </div>
 </template>
 
@@ -545,6 +549,7 @@ import CoverArt from './CoverArt.vue'
 import PickPlaylistModal from './PickPlaylistModal.vue'
 import SongInfoModal from './SongInfoModal.vue'
 import DlnaCastModal from './DlnaCastModal.vue'
+import CastIcon from './CastIcon.vue'
 import { isFavorite, toggleFavorite } from '../stores/library.js'
 import {
   moodRadioActive,
@@ -563,6 +568,8 @@ import { useQualityMenuPosition } from '../utils/qualityMenu.js'
 
 const queuePanelRef = ref(null)
 const queueBtnRef = ref(null)
+const dlnaPanelRef = ref(null)
+const dlnaBtnRef = ref(null)
 const songInfoRef = ref(null)
 const moreWrapRef = ref(null)
 const playerBarRef = ref(null)
@@ -713,7 +720,18 @@ function onToggleQueueFavorite(item, source) {
 
 function onMoreOpenDlna() {
   showMorePanel.value = false
+  showQueuePanel.value = false
+  showSongInfo.value = false
   showDlnaCast.value = true
+}
+
+function onToggleDlnaCast() {
+  showDlnaCast.value = !showDlnaCast.value
+  if (showDlnaCast.value) {
+    showQueuePanel.value = false
+    showMorePanel.value = false
+    showSongInfo.value = false
+  }
 }
 
 function openPickCurrentPlaylist() {
@@ -844,6 +862,12 @@ function onDocumentClick(e) {
     const more = moreWrapRef.value
     if (!panel?.contains(t) && !btn?.contains(t) && !more?.contains(t)) showQueuePanel.value = false
   }
+  if (showDlnaCast.value) {
+    const panel = dlnaPanelRef.value
+    const btn = dlnaBtnRef.value
+    const more = moreWrapRef.value
+    if (!panel?.contains(t) && !btn?.contains(t) && !more?.contains(t)) showDlnaCast.value = false
+  }
   if (showSongInfo.value) {
     if (isMobilePlayer.value || isCompact.value) {
       // 抽屉用遮罩关闭
@@ -863,6 +887,7 @@ function onToggleQueuePanel() {
   if (showQueuePanel.value) {
     showMorePanel.value = false
     showSongInfo.value = false
+    showDlnaCast.value = false
   }
 }
 
@@ -870,6 +895,7 @@ function toggleMorePanel() {
   showMorePanel.value = !showMorePanel.value
   if (showMorePanel.value) {
     showQueuePanel.value = false
+    showDlnaCast.value = false
     closeDownloadMenu()
   } else {
     showMoreDlQuality.value = false
@@ -879,6 +905,7 @@ function toggleMorePanel() {
 function onMoreOpenQueue() {
   showMorePanel.value = false
   showSongInfo.value = false
+  showDlnaCast.value = false
   showQueuePanel.value = true
 }
 
@@ -937,6 +964,7 @@ function openSongInfoPanel() {
   if (!currentPlaying.value) return
   showSongInfo.value = true
   showQueuePanel.value = false
+  showDlnaCast.value = false
   showMorePanel.value = false
   closeDownloadMenu()
 }
@@ -1280,6 +1308,25 @@ async function onQueuePlayClick(index) {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+}
+.ctrl-cast {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.ctrl-cast:hover,
+.ctrl-cast.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-muted);
 }
 .ctrl-playlist {
   width: 34px;
@@ -1680,7 +1727,9 @@ async function onQueuePlayClick(index) {
   position: absolute;
   bottom: 72px;
   right: 24px;
-  width: min(380px, calc(100vw - var(--sidebar-width) - 48px));
+  left: auto;
+  width: 380px;
+  max-width: calc(100vw - 32px);
   max-height: 420px;
   display: flex;
   flex-direction: column;
@@ -2050,12 +2099,12 @@ async function onQueuePlayClick(index) {
 }
 
 .player-bar.compact .queue-panel {
-  left: 10px;
-  right: 10px;
+  left: auto;
+  right: 16px;
   bottom: calc(var(--player-height) + 10px + env(safe-area-inset-bottom, 0px));
-  width: auto;
-  max-height: min(62dvh, 520px);
-  border-radius: 16px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: 420px;
 }
 
 .player-bar.compact .queue-header {
@@ -2109,10 +2158,12 @@ async function onQueuePlayClick(index) {
   }
 
   .player-bar.compact .queue-panel {
-    left: 8px;
-    right: 8px;
+    left: auto;
+    right: 12px;
     bottom: calc(var(--player-height) + 8px + env(safe-area-inset-bottom, 0px));
-    max-height: min(58dvh, 480px);
+    width: 380px;
+    max-width: calc(100vw - 24px);
+    max-height: 420px;
   }
 
   .player-bar.compact .queue-index {

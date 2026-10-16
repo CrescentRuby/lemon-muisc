@@ -117,6 +117,121 @@ function wrapPlayUrl(url, source) {
   return `/api/play/proxy?url=${encodeURIComponent(url)}&source=${encodeURIComponent(source || '')}`
 }
 
+function httpError(status, message, extra = {}) {
+  const e = new Error(message)
+  e.status = status
+  Object.assign(e, extra)
+  return e
+}
+
+/**
+ * 解析为未签名的本站流路径（/api/play/local|proxy|…），供试听与 DLNA 共用。
+ * @returns {Promise<{ rel: string, extra?: object }>}
+ */
+export async function resolvePlayStreamRel(req) {
+  const body = req.body || {}
+  const { songId, source, quality, sourceApiId, skipSourceIds, refresh } = body
+  const podcastEpisodeId = String(body.podcastEpisodeId || body.episodeId || '').trim()
+  if (source === 'podcast' || podcastEpisodeId) {
+    const ep = getEpisodeForUser(req.user?.id, podcastEpisodeId || String(body.id || '').trim())
+    if (!ep?.audioUrl) throw httpError(404, '播客节目不存在', { code: 'PODCAST_NOT_FOUND' })
+    return { rel: wrapPlayUrl(ep.audioUrl, 'podcast'), extra: { podcast: true } }
+  }
+  const libraryTrackId = pickLibraryTrackId(body)
+  const localFilePath = resolveLocalFilePath(body)
+  if (libraryTrackId && !localFilePath) {
+    throw httpError(404, '未找到对应曲目', { code: 'TRACK_NOT_FOUND' })
+  }
+
+  if (localFilePath) {
+    if (!isAllowedMediaPath(localFilePath, { userId: req.user?.id })) {
+      throw httpError(400, '本地文件不可用或不在允许目录内，请在设置中检查音乐库/下载路径')
+    }
+    const mapped = mapToContainerPath(localFilePath) || localFilePath
+    const resolvedLocal = fs.existsSync(path.resolve(mapped))
+      ? path.resolve(mapped)
+      : path.resolve(localFilePath)
+    const localExt = path.extname(resolvedLocal).toLowerCase()
+    const forceDsdSmooth = isDsdExt(localExt)
+    const wantSmooth = forceDsdSmooth || (Boolean(body.smooth)
+      && canSmoothOrRepairTranscode(resolvedLocal)
+      && localExt !== '.ape')
+    const tid = String(libraryTrackId || '').trim()
+    const qs = tid && LIBRARY_TRACK_ID_RE.test(tid)
+      ? `trackId=${encodeURIComponent(tid)}`
+      : `path=${encodeURIComponent(resolvedLocal)}`
+    const playPath = localExt === '.ape'
+      ? `/api/play/local-ape?${qs}`
+      : wantSmooth
+        ? `/api/play/local-smooth?${qs}`
+        : `/api/play/local?${qs}`
+    return {
+      rel: playPath,
+      extra: {
+        local: true,
+        smooth: wantSmooth || localExt === '.ape',
+        format: localExt.slice(1) || undefined,
+      },
+    }
+  }
+
+  if (source === 'local') {
+    throw httpError(400, '缺少本地文件路径')
+  }
+
+  if (!songId || !source) throw httpError(400, '缺少歌曲信息')
+
+  if (!isPlatformEnabled(req.user?.id, source)) {
+    const name = AVAILABLE_SOURCES[source]?.name || source
+    throw httpError(400, `平台「${name}」已关闭，请在设置 → 音源管理中开启`)
+  }
+
+  if (!hasActiveSource(getStoredActiveSourceIds(req.user?.id))) {
+    throw httpError(400, '没有激活的音源，请先在设置中激活音源')
+  }
+
+  const type = quality || body.quality || '128k'
+  const musicInfo = buildMusicInfo({ ...body, source, quality: type })
+  const cacheKey = buildPlayUrlCacheKey(source, musicInfo.songId, type)
+  const bypassCache = Boolean(refresh)
+    || Boolean(sourceApiId)
+    || (Array.isArray(skipSourceIds) && skipSourceIds.length > 0)
+  if (refresh) clearCachedPlayUrl(cacheKey)
+  const cached = bypassCache ? null : getCachedPlayUrl(cacheKey)
+  if (cached) {
+    return { rel: cached, extra: { cached: true } }
+  }
+
+  let wrappedSourceInfo = null
+  const allowedSourceIds = getStoredActiveSourceIds(req.user?.id)
+  const wrapped = await playUrlLimiter(() => getOrFetchPlayUrl(cacheKey, async () => {
+    const result = await withTimeout(
+      requestSourceWithMeta(source, 'musicUrl', {
+        type,
+        quality: type,
+        musicInfo,
+      }, {
+        fallbackMode: getSourceFallbackMode(readSettings()),
+        preferredSourceId: sourceApiId || undefined,
+        skipSourceIds: skipSourceIds || [],
+        allowedSourceIds,
+        userId: req.user?.id,
+      }),
+      PLAY_URL_TIMEOUT_MS,
+      '获取播放链接超时，请稍后重试',
+    )
+    const url = extractMusicUrl(result.data)
+    if (!url) throw new Error('获取播放链接失败')
+    wrappedSourceInfo = buildSourceInfoPayload(result)
+    return wrapPlayUrl(url, source)
+  }))
+
+  return {
+    rel: wrapped,
+    extra: wrappedSourceInfo ? { sourceInfo: wrappedSourceInfo } : {},
+  }
+}
+
 const LIBRARY_TRACK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /**
@@ -203,112 +318,11 @@ playRouter.post('/ticket', (req, res) => {
 
 playRouter.post('/url', async (req, res) => {
   try {
-    const { songId, source, quality, sourceApiId, skipSourceIds, refresh } = req.body
-    const podcastEpisodeId = String(req.body?.podcastEpisodeId || req.body?.episodeId || '').trim()
-    if (source === 'podcast' || podcastEpisodeId) {
-      const ep = getEpisodeForUser(req.user?.id, podcastEpisodeId || String(req.body?.id || '').trim())
-      if (!ep?.audioUrl) {
-        return res.status(404).json({ error: '播客节目不存在', code: 'PODCAST_NOT_FOUND' })
-      }
-      const url = signPlayStreamUrl(wrapPlayUrl(ep.audioUrl, 'podcast'), req)
-      return res.json({ ok: true, url, podcast: true })
-    }
-    const libraryTrackId = pickLibraryTrackId(req.body)
-    const localFilePath = resolveLocalFilePath(req.body)
-    // 仅显式音乐库 trackId 找不到时 404；在线曲目的平台 id 不得走此分支
-    if (libraryTrackId && !localFilePath) {
-      return res.status(404).json({ error: '未找到对应曲目', code: 'TRACK_NOT_FOUND' })
-    }
-
-    // 本地文件：返回可流式播放的同源 URL（APE 走转码缓存端点）
-    if (localFilePath) {
-      if (!isAllowedMediaPath(localFilePath, { userId: req.user?.id })) {
-        return res.status(400).json({ error: '本地文件不可用或不在允许目录内，请在设置中检查音乐库/下载路径' })
-      }
-      const mapped = mapToContainerPath(localFilePath) || localFilePath
-      const resolvedLocal = fs.existsSync(path.resolve(mapped))
-        ? path.resolve(mapped)
-        : path.resolve(localFilePath)
-      const localExt = path.extname(resolvedLocal).toLowerCase()
-      const forceDsdSmooth = isDsdExt(localExt)
-      const wantSmooth = forceDsdSmooth || (Boolean(req.body?.smooth)
-        && canSmoothOrRepairTranscode(resolvedLocal)
-        && localExt !== '.ape')
-      // 有稳定 trackId 时用短地址，避免中文长路径被网关截断
-      const tid = String(libraryTrackId || '').trim()
-      const qs = tid && LIBRARY_TRACK_ID_RE.test(tid)
-        ? `trackId=${encodeURIComponent(tid)}`
-        : `path=${encodeURIComponent(resolvedLocal)}`
-      const playPath = localExt === '.ape'
-        ? `/api/play/local-ape?${qs}`
-        : wantSmooth
-          ? `/api/play/local-smooth?${qs}`
-          : `/api/play/local?${qs}`
-      const url = signPlayStreamUrl(playPath, req)
-      return res.json({
-        ok: true,
-        url,
-        local: true,
-        smooth: wantSmooth || localExt === '.ape',
-        format: localExt.slice(1) || undefined,
-      })
-    }
-
-    if (source === 'local') {
-      return res.status(400).json({ error: '缺少本地文件路径' })
-    }
-
-    if (!songId || !source) return res.status(400).json({ error: '缺少歌曲信息' })
-
-    if (!isPlatformEnabled(req.user?.id, source)) {
-      const name = AVAILABLE_SOURCES[source]?.name || source
-      return res.status(400).json({ error: `平台「${name}」已关闭，请在设置 → 音源管理中开启` })
-    }
-
-    if (!hasActiveSource(getStoredActiveSourceIds(req.user?.id))) {
-      return res.status(400).json({ error: '没有激活的音源，请先在设置中激活音源' })
-    }
-
-    const type = quality || req.body.quality || '128k'
-    const musicInfo = buildMusicInfo({ ...req.body, source, quality: type })
-    const cacheKey = buildPlayUrlCacheKey(source, musicInfo.songId, type)
-    const bypassCache = Boolean(refresh)
-      || Boolean(sourceApiId)
-      || (Array.isArray(skipSourceIds) && skipSourceIds.length > 0)
-    if (refresh) clearCachedPlayUrl(cacheKey)
-    const cached = bypassCache ? null : getCachedPlayUrl(cacheKey)
-    if (cached) {
-      return res.json({ ok: true, url: signPlayStreamUrl(cached, req), cached: true })
-    }
-
-    let wrappedSourceInfo = null
-    const allowedSourceIds = getStoredActiveSourceIds(req.user?.id)
-    const wrapped = await playUrlLimiter(() => getOrFetchPlayUrl(cacheKey, async () => {
-      const result = await withTimeout(
-        requestSourceWithMeta(source, 'musicUrl', {
-          type,
-          quality: type,
-          musicInfo,
-        }, {
-          fallbackMode: getSourceFallbackMode(readSettings()),
-          preferredSourceId: sourceApiId || undefined,
-          skipSourceIds: skipSourceIds || [],
-          allowedSourceIds,
-          userId: req.user?.id,
-        }),
-        PLAY_URL_TIMEOUT_MS,
-        '获取播放链接超时，请稍后重试',
-      )
-      const url = extractMusicUrl(result.data)
-      if (!url) throw new Error('获取播放链接失败')
-      wrappedSourceInfo = buildSourceInfoPayload(result)
-      return wrapPlayUrl(url, source)
-    }))
-
+    const { rel, extra } = await resolvePlayStreamRel(req)
     res.json({
       ok: true,
-      url: signPlayStreamUrl(wrapped, req),
-      ...(wrappedSourceInfo ? { sourceInfo: wrappedSourceInfo } : {}),
+      url: signPlayStreamUrl(rel, req),
+      ...(extra || {}),
     })
   } catch (e) {
     const offer = buildSourceFallbackOffer(e)
@@ -319,7 +333,8 @@ playRouter.post('/url', async (req, res) => {
         sourceFallbackOffer: offer,
       })
     }
-    res.status(500).json({ error: formatPlayError(e) })
+    const status = Number(e.status) || 500
+    res.status(status).json({ error: status >= 500 ? formatPlayError(e) : (e.message || '无法获取播放链接'), code: e.code })
   }
 })
 

@@ -770,6 +770,13 @@
                 >{{ sourceBusyId === s.id ? '停用中…' : '停用' }}</button>
                 <button
                   v-if="isAdminUser"
+                  class="btn-sm btn-ghost"
+                  type="button"
+                  :disabled="sourceBusyId === s.id || exportingSourceId === s.id"
+                  @click="exportSource(s)"
+                >{{ exportingSourceId === s.id ? '导出中…' : '导出' }}</button>
+                <button
+                  v-if="isAdminUser"
                   class="btn-sm btn-danger"
                   :disabled="sourceBusyId === s.id || importingUrl || importingFiles"
                   @click="removeSource(s.id)"
@@ -1563,6 +1570,7 @@ const outdatedSourceCount = computed(() =>
 )
 /** 正在激活/停用的音源 id，避免无反馈空等像卡死 */
 const sourceBusyId = ref('')
+const exportingSourceId = ref('')
 const PLATFORM_SHORT = { tx: 'QQ', wy: '云', kw: '酷', kg: '狗', mg: '咪' }
 /** @type {import('vue').Ref<Record<string, string[]>>} */
 const sourcePlatformMap = ref({})
@@ -3638,6 +3646,33 @@ async function deactivateSource(id) {
     showToast(e.message || '停用失败', 'error')
   } finally {
     sourceBusyId.value = ''
+  }
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/javascript;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || 'source.js'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function exportSource(source) {
+  const id = source?.id
+  if (!id || exportingSourceId.value) return
+  exportingSourceId.value = id
+  try {
+    const res = await api.source.exportScript(id)
+    const script = String(res?.script || '')
+    if (!script.trim()) throw new Error('该音源没有可导出的脚本')
+    downloadTextFile(res.filename || `${source.name || 'source'}.js`, script)
+    showToast('已导出音源脚本', 'success')
+  } catch (e) {
+    showToast(e.message || '导出失败', 'error')
+  } finally {
+    exportingSourceId.value = ''
   }
 }
 

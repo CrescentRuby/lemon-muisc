@@ -17,7 +17,10 @@
         {{ scanButtonLabel }}
       </button>
       <button type="button" class="btn-primary btn-sm" @click="openCreatePlaylist">创建歌单</button>
-      <router-link to="/podcasts" class="btn-ghost btn-sm library-podcast-btn">播客</router-link>
+      <router-link to="/podcasts" class="btn-ghost btn-sm library-podcast-btn">
+        <PodcastIcon :size="15" />
+        播客
+      </router-link>
     </div>
     <div v-if="scanSummary || showScanStatus" class="library-scan-summary">
       <span v-if="scanSummary" class="library-scan-summary-main">
@@ -451,6 +454,7 @@ import PickPlaylistModal from '../components/PickPlaylistModal.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import AppSelect from '../components/AppSelect.vue'
 import SearchInput from '../components/SearchInput.vue'
+import PodcastIcon from '../components/PodcastIcon.vue'
 import { SEARCH_HISTORY_KEYS } from '../composables/useSearchHistory.js'
 import { formatTrackTags, formatAlbumTags } from '../utils/format.js'
 import { getTrackFilePath } from '../utils/trackPath.js'
@@ -1359,6 +1363,7 @@ function showToast(text, type = 'info') {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   text-decoration: none;
   flex-shrink: 0;
   box-sizing: border-box;

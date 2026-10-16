@@ -169,6 +169,7 @@ add('/source/update/{id}', 'post', '更新指定音源脚本', {
     },
   },
 })
+add('/source/{id}/export', 'get', '导出音源脚本', { tag: 'source', admin: true, parameters: [p('id', '音源 ID')] })
 add('/source/{id}', 'delete', '删除音源', { tag: 'source', admin: true, parameters: [p('id', '音源 ID')] })
 add('/source/fault', 'get', '音源故障信息', { tag: 'source' })
 add('/source/fault/dismiss', 'post', '忽略故障提示', { tag: 'source' })
@@ -469,7 +470,7 @@ add('/podcasts/{id}', 'delete', '取消订阅', { tag: 'podcasts', parameters: [
 add('/podcasts/{id}/episodes', 'get', '节目标题分页', { tag: 'podcasts', parameters: [p('id', '订阅 ID'), q('page', '页'), q('limit', '每页')] })
 add('/podcasts/{id}/refresh', 'post', '刷新订阅', { tag: 'podcasts', parameters: [p('id', '订阅 ID')] })
 add('/dlna/devices', 'get', '搜索 DLNA 渲染器', { tag: 'dlna', parameters: [q('refresh', '1=重新 SSDP')] })
-add('/dlna/play', 'post', '投送到设备（本地库或播客）', { tag: 'dlna', body: {} })
+add('/dlna/play', 'post', '投送到设备（本地、播客或在线平台曲目）', { tag: 'dlna', body: {} })
 add('/dlna/stop', 'post', '停止投屏', { tag: 'dlna', body: {} })
 
 const spec = {

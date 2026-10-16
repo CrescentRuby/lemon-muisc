@@ -1,7 +1,12 @@
 <template>
   <div class="podcasts-page">
-    <div class="page-title">播客</div>
-    <p class="page-subtitle">订阅 RSS / Atom，节目会进入当前播放队列，不经过音乐库扫描</p>
+    <div class="page-header-row">
+      <button type="button" class="btn-ghost btn-sm" @click="goBack">← 返回</button>
+      <div>
+        <div class="page-title"><PodcastIcon :size="22" />播客</div>
+        <p class="page-subtitle">订阅 RSS / Atom，节目会进入当前播放队列，不经过音乐库扫描</p>
+      </div>
+    </div>
 
     <form class="subscribe-row" @submit.prevent="onSubscribe">
       <input
@@ -33,7 +38,7 @@
         @click="openFeed(feed.id)"
       >
         <img v-if="feed.imageUrl" class="feed-cover" :src="feed.imageUrl" alt="" />
-        <div v-else class="feed-cover feed-cover-empty">播</div>
+        <div v-else class="feed-cover feed-cover-empty"><PodcastIcon :size="28" /></div>
         <div class="feed-body">
           <div class="feed-title" :title="feed.title">{{ feed.title }}</div>
           <div class="feed-meta">{{ feed.author || '未知作者' }} · {{ feed.episodeCount || 0 }} 期</div>
@@ -48,6 +53,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api.js'
+import PodcastIcon from '../components/PodcastIcon.vue'
 
 const router = useRouter()
 const feeds = ref([])
@@ -56,6 +62,11 @@ const loading = ref(false)
 const subscribing = ref(false)
 const error = ref('')
 const toast = ref(null)
+
+function goBack() {
+  if (window.history.length > 1) router.back()
+  else router.push('/library')
+}
 
 function showToast(text, type = 'info') {
   toast.value = { text, type }
@@ -103,8 +114,20 @@ onMounted(() => {
 
 <style scoped>
 .podcasts-page { padding: 8px 4px 24px; }
-.page-title { font-size: 22px; font-weight: 700; }
-.page-subtitle { margin: 6px 0 16px; color: var(--text-muted); font-size: 13px; }
+.page-header-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-subtitle { margin: 6px 0 0; color: var(--text-muted); font-size: 13px; }
 .subscribe-row {
   display: flex;
   gap: 8px;

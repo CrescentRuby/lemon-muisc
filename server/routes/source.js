@@ -337,6 +337,35 @@ sourceRouter.post('/update/:id', requireAdmin, async (req, res) => {
   }
 })
 
+function safeSourceFilename(name, id) {
+  const base = String(name || 'source')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+  const suffix = String(id || '').replace(/[^\w.-]/g, '').slice(0, 12)
+  return `${base || 'source'}${suffix ? `-${suffix}` : ''}.js`
+}
+
+sourceRouter.get('/:id/export', requireAdmin, (req, res) => {
+  try {
+    const row = getDB().prepare('SELECT id, name, version, script FROM user_apis WHERE id = ?').get(req.params.id)
+    if (!row) return res.status(404).json({ error: '音源不存在' })
+    const script = String(row.script || '')
+    if (!script.trim()) return res.status(404).json({ error: '该音源没有可导出的脚本' })
+    res.json({
+      ok: true,
+      id: row.id,
+      name: row.name,
+      version: row.version || '',
+      filename: safeSourceFilename(row.name, row.id),
+      script,
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message || '导出失败' })
+  }
+})
+
 sourceRouter.delete('/:id', requireAdmin, (req, res) => {
   unloadSource(req.params.id)
   removeActiveSourceIdFromAllUsers(req.params.id)

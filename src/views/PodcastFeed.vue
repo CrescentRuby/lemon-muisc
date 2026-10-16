@@ -1,9 +1,13 @@
 <template>
   <div class="podcast-feed-page">
     <div class="feed-head">
-      <router-link to="/podcasts" class="back">← 全部订阅</router-link>
+      <div class="feed-nav">
+        <button type="button" class="btn-ghost btn-sm" @click="goBack">← 返回</button>
+        <router-link to="/podcasts" class="btn-ghost btn-sm">全部订阅</router-link>
+      </div>
       <div v-if="feed" class="feed-hero">
         <img v-if="feed.imageUrl" class="hero-cover" :src="feed.imageUrl" alt="" />
+        <div v-else class="hero-cover hero-cover-empty"><PodcastIcon :size="48" /></div>
         <div>
           <h2>{{ feed.title }}</h2>
           <p class="hero-meta">{{ feed.author }} · {{ total }} 期</p>
@@ -54,6 +58,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api.js'
+import PodcastIcon from '../components/PodcastIcon.vue'
 import { startPlayTracks } from '../stores/player.js'
 
 const route = useRoute()
@@ -68,6 +73,11 @@ const loadingMore = ref(false)
 const refreshing = ref(false)
 const error = ref('')
 const toast = ref('')
+
+function goBack() {
+  if (window.history.length > 1) router.back()
+  else router.push('/podcasts')
+}
 
 function formatDate(ms) {
   if (!ms) return ''
@@ -164,8 +174,7 @@ onMounted(() => loadPage(1))
 
 <style scoped>
 .podcast-feed-page { padding: 8px 4px 28px; }
-.back { font-size: 13px; color: var(--text-muted); text-decoration: none; }
-.back:hover { color: var(--accent); }
+.feed-nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .feed-hero {
   display: flex;
   gap: 16px;
@@ -178,6 +187,13 @@ onMounted(() => loadPage(1))
   border-radius: 12px;
   object-fit: cover;
   flex-shrink: 0;
+}
+.hero-cover-empty {
+  display: grid;
+  place-items: center;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
 }
 .feed-hero h2 { margin: 0 0 6px; font-size: 22px; }
 .hero-meta { margin: 0; color: var(--text-muted); font-size: 13px; }

@@ -222,6 +222,7 @@ export const api = {
       body: url ? { url } : {},
       timeout: 90000,
     }),
+    exportScript: (id) => request(`/source/${encodeURIComponent(id)}/export`),
     remove: (id) => request(`/source/${id}`, { method: 'DELETE' }),
     activate: (id) => request(`/source/activate/${id}`, { method: 'POST', timeout: 25000 }),
     deactivate: (id) => id
@@ -374,7 +375,7 @@ export const api = {
   },
   dlna: {
     devices: (refresh = false) => request(`/dlna/devices${refresh ? '?refresh=1' : ''}`, { timeout: 15000 }),
-    play: (body) => request('/dlna/play', { method: 'POST', body, timeout: 20000 }),
+    play: (body) => request('/dlna/play', { method: 'POST', body, timeout: 45000 }),
     stop: (udn) => request('/dlna/stop', { method: 'POST', body: { udn } }),
   },
   play: {
