@@ -19,7 +19,7 @@
           <h1 class="album-title">{{ album.name }}</h1>
           <p class="album-artist">{{ album.artist }}</p>
           <p v-if="albumTags" class="album-tags">{{ albumTags }}</p>
-          <p class="detail-meta">{{ album.trackCount || album.tracks.length }} 首</p>
+          <p class="detail-meta">{{ albumTrackTotal }} 首</p>
           <div class="detail-actions">
             <button class="btn-primary btn-sm" :disabled="!album.tracks.length" @click="playAll">播放全部</button>
             <button class="btn-ghost btn-sm" :disabled="!album.tracks.length" @click="queueAll">加入试听列表</button>
@@ -34,7 +34,7 @@
             <button
               class="btn-ghost btn-sm"
               type="button"
-              :disabled="albumSyncBusy || !(album.trackCount || album.tracks.length)"
+              :disabled="albumSyncBusy || !albumTrackTotal"
               @click="openAlbumSync"
             >
               {{ albumSyncBusy ? '准备中…' : '专辑检测' }}
@@ -124,7 +124,7 @@
         <ListPager
           v-model:page="page"
           v-model:page-size="pageSize"
-          :total="album?.trackCount || album?.tracks?.length || 0"
+          :total="albumTrackTotal"
         />
       </template>
     </section>
@@ -166,7 +166,7 @@ import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
 import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
-import { useListPageSize } from '../composables/useListPageSize.js'
+import { useListPageSize, resolveLoadedTotal } from '../composables/useListPageSize.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused } from '../stores/player.js'
 import { assertActiveSourceForDownload } from '../stores/downloadGuard.js'
 import {
@@ -177,6 +177,7 @@ import {
   isFavoriteAlbum,
   toggleFavoriteAlbum,
   fetchLibraryTracksPage,
+  fetchLibraryAlbums,
   fetchAllLibraryTracks,
   localCoverUrl,
 } from '../stores/library.js'
@@ -237,9 +238,15 @@ function onToggleAlbumFavorite() {
   const added = toggleFavoriteAlbum(album.value)
   showToast(added ? '已收藏专辑' : '已取消收藏专辑', added ? 'success' : 'info')
 }
-const totalPages = computed(() => Math.max(1, Math.ceil((album.value?.trackCount || album.value?.tracks?.length || 0) / pageSize.value)))
+const albumTrackTotal = computed(() => album.value?.trackCount || 0)
 const listStart = computed(() => (page.value - 1) * pageSize.value)
-const pagedTracks = computed(() => album.value?.tracks || [])
+const pagedTracks = computed(() => {
+  const tracks = album.value?.tracks || []
+  const size = Math.max(1, Number(pageSize.value) || 20)
+  if (tracks.length <= size) return tracks
+  const start = (page.value - 1) * size
+  return tracks.slice(start, start + size)
+})
 
 async function loadAlbum() {
   const seq = ++loadSeq
@@ -264,6 +271,7 @@ async function loadAlbum() {
         albumArtist,
         sort: 'album',
         replace: false,
+        syncNavBadge: false,
       })
       items = tracksRes.items
       total = tracksRes.total
@@ -289,11 +297,27 @@ async function loadAlbum() {
         album: name,
         sort: 'album',
         replace: false,
+        syncNavBadge: false,
       })
       items = fallback.items
       total = fallback.total
     }
     if (seq !== loadSeq) return
+    let metaCount = 0
+    try {
+      const albumsRes = await fetchLibraryAlbums(api, {
+        page: 1,
+        limit: 8,
+        album: name,
+        albumArtist: albumArtist || undefined,
+      })
+      const meta = albumsRes.items.find((a) => a.name === name && (!albumArtist || a.artist === albumArtist))
+        || albumsRes.items.find((a) => a.name === name)
+        || albumsRes.items[0]
+      metaCount = Number(meta?.trackCount) || 0
+    } catch {
+      metaCount = 0
+    }
     const cover = items.find((t) => t.picUrl)?.picUrl
       || (items[0]?.filePath ? localCoverUrl(items[0].filePath) : '')
     album.value = albumShell(artist, name, {
@@ -301,7 +325,10 @@ async function loadAlbum() {
       cover,
       year: items[0]?.year || '',
       genre: items[0]?.genre || '',
-      trackCount: total,
+      trackCount: Math.max(
+        resolveLoadedTotal(total, page.value, pageSize.value, items.length),
+        metaCount,
+      ),
       tracks: items,
     })
   } catch {

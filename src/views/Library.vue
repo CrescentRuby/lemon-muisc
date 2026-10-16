@@ -17,6 +17,7 @@
         {{ scanButtonLabel }}
       </button>
       <button type="button" class="btn-primary btn-sm" @click="openCreatePlaylist">创建歌单</button>
+      <router-link to="/podcasts" class="btn-ghost btn-sm library-podcast-btn">播客</router-link>
     </div>
     <div v-if="scanSummary || showScanStatus" class="library-scan-summary">
       <span v-if="scanSummary" class="library-scan-summary-main">
@@ -295,14 +296,14 @@
             title="歌曲排序"
             size="sm"
           />
-          <span class="song-total" v-if="sortedFilteredSongs.length">{{ sortedFilteredSongs.length }} 首</span>
+          <span class="song-total" v-if="songTotal || libraryTrackTotal || sortedFilteredSongs.length">{{ songTotal || libraryTrackTotal || sortedFilteredSongs.length }} 首</span>
         </div>
       </div>
 
       <div v-if="libraryLoading && !libraryTracks.length" class="library-loading card">正在扫描音乐库… {{ loadProgress }}</div>
       <div v-else-if="!libraryTracks.length" class="empty card">
         <p>暂无本地音乐</p>
-        <p class="empty-hint">请先在「设置 → 文件路径」添加音乐库目录</p>
+        <p class="empty-hint">{{ emptyLibraryHint }}</p>
         <router-link to="/settings" class="btn-ghost btn-sm">打开设置</router-link>
       </div>
       <template v-else>
@@ -387,7 +388,7 @@
         <ListPager
           v-model:page="page"
           v-model:page-size="pageSize"
-          :total="songTotal || libraryTrackTotal || 0"
+          :total="songTotal || libraryTrackTotal || sortedFilteredSongs.length || 0"
           @change-page-size="loadSongPage"
         />
       </template>
@@ -453,6 +454,7 @@ import {
   sortLibrarySongs,
   PLAYLIST_SORT_OPTIONS, ALBUM_SORT_OPTIONS, SONG_SORT_OPTIONS,
   scanLibrary, isFavorite, toggleFavorite,
+  hydrateLibrarySnapshot, libraryIndexFresh,
   librarySongColumns, loadLibrarySongColumns,
   fetchLibraryTracksPage, fetchLibraryArtists, fetchLibraryAlbums, fetchLibraryGenres,
   libraryBrowseRevision,
@@ -461,6 +463,7 @@ import {
   playlistCardsRevision,
   refreshLibraryTrackTotal,
   setLibraryTrackTotal,
+  libraryMusicRoots,
 } from '../stores/library.js'
 import {
   dailyMix,
@@ -591,6 +594,13 @@ const scanStatusHint = computed(() => {
   return loadProgress.value || ''
 })
 const showScanStatus = computed(() => libraryScanning.value && !!scanStatusHint.value)
+const emptyLibraryHint = computed(() => {
+  const roots = libraryMusicRoots.value || []
+  if (roots.length) {
+    return '已配置音乐库目录，但还没有扫描到音频文件。请确认目录里有歌曲，或点「刷新库」重新扫描。'
+  }
+  return '请先在「设置 → 文件路径」添加音乐库目录（Docker 请把歌曲挂载到 /music）'
+})
 
 function notifyScanComplete(result, { force = false } = {}) {
   if (!result) return
@@ -672,10 +682,27 @@ const visibleAlbums = computed(() => {
 const filteredSongs = computed(() => libraryTracks.value)
 const sortedFilteredSongs = computed(() => sortLibrarySongs(filteredSongs.value, songSort.value))
 
-const totalPages = computed(() => Math.max(1, Math.ceil((songTotal.value || libraryTrackTotal.value || 0) / pageSize.value)))
-const pagedSongs = computed(() => sortedFilteredSongs.value)
+const totalPages = computed(() => Math.max(1, Math.ceil((songTotal.value || libraryTrackTotal.value || sortedFilteredSongs.value.length || 0) / pageSize.value)))
+const pagedSongs = computed(() => {
+  const rows = sortedFilteredSongs.value
+  const size = Math.max(1, Number(pageSize.value) || 20)
+  if (rows.length <= size) return rows
+  const start = (page.value - 1) * size
+  return rows.slice(start, start + size)
+})
 
-async function loadSongPage() {
+async function loadSongPage({ allowLocal = false } = {}) {
+  if (
+    allowLocal
+    && libraryIndexFresh.value
+    && page.value === 1
+    && (songSort.value === 'recent' || !songSort.value)
+    && libraryTracks.value.length
+  ) {
+    songTotal.value = libraryTrackTotal.value || libraryTracks.value.length
+    songsLoading.value = false
+    return
+  }
   songsLoading.value = true
   try {
     const sortMap = { recent: 'mtime', title: 'title', artist: 'artist', album: 'album' }
@@ -794,20 +821,22 @@ onMounted(() => {
   }
   updatePlaylistCols()
   loadLibrarySongColumns(api).catch(() => {})
-  // 先出列表/预览，扫盘与每日推荐稍后后台跑，避免刷新首进被 scan-start 堵住
+  hydrateLibrarySnapshot()
   loadScanSummary()
   loadBrowsePreviews()
-  loadSongPage()
+  loadSongPage({ allowLocal: true })
   const deferHeavy = () => {
     refreshLibraryMix().catch(() => {})
     scanLibrary(api, {
       resync: true,
       onError: (msg) => showToast(msg, 'error'),
       onComplete: (result, meta) => {
-        loadScanSummary()
-        loadBrowsePreviews()
-        loadSongPage()
-        refreshLibraryMix().catch(() => {})
+        if (!result?.skippedHotUpdate) {
+          loadScanSummary()
+          loadBrowsePreviews()
+          loadSongPage()
+          refreshLibraryMix().catch(() => {})
+        }
         notifyScanComplete(result, meta)
       },
     }).catch(() => {})
@@ -820,11 +849,14 @@ onMounted(() => {
 })
 
 onActivated(() => {
-  // keep-alive 从歌手/专辑页返回：校正侧栏角标，并刷新首页歌曲总数展示
-  refreshLibraryTrackTotal(api).then((n) => {
-    if (n > 0) songTotal.value = n
-  }).catch(() => {})
-  loadSongPage()
+  if (libraryIndexFresh.value && libraryTrackTotal.value > 0) {
+    songTotal.value = libraryTrackTotal.value
+  } else {
+    refreshLibraryTrackTotal(api).then((n) => {
+      if (n > 0) songTotal.value = n
+    }).catch(() => {})
+  }
+  loadSongPage({ allowLocal: libraryIndexFresh.value && page.value === 1 })
 })
 
 onUnmounted(() => {
@@ -1291,6 +1323,14 @@ function showToast(text, type = 'info') {
   flex: 1 1 200px;
   min-width: 0;
   display: flex;
+}
+.library-podcast-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .section-head {
@@ -1831,11 +1871,14 @@ function showToast(text, type = 'info') {
     padding: 0 14px;
   }
   .library-topbar .btn-ghost,
-  .library-topbar .btn-primary {
+  .library-topbar .btn-primary,
+  .library-topbar .library-podcast-btn {
     flex: 1;
     min-width: 0;
     padding: 8px 10px;
     font-size: 13px;
+    text-align: center;
+    text-decoration: none;
   }
 
   .section-head {

@@ -19,6 +19,8 @@ const PLAY_STATS_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 const PLAY_STATS_RECENT_CAP = 200
 const SESSION_TRACKS_KEY_BASE = 'lemon-library-tracks-v1'
 const SESSION_TRACKS_LIMIT = 8000
+const LIBRARY_SNAPSHOT_KEY_BASE = 'lemon-library-snapshot-v1'
+const LIBRARY_SNAPSHOT_TRACK_LIMIT = 80
 const coverVersions = new Map()
 
 let activeUserId = ''
@@ -35,6 +37,7 @@ function playStatsKey() { return storageKey(PLAY_STATS_KEY_BASE) }
 function playlistsKey() { return storageKey(PLAYLISTS_KEY_BASE) }
 function userDataRevKey() { return storageKey(USER_DATA_REV_KEY_BASE) }
 function sessionTracksKey() { return storageKey(SESSION_TRACKS_KEY_BASE) }
+function librarySnapshotKey() { return storageKey(LIBRARY_SNAPSHOT_KEY_BASE) }
 
 export const libraryTracks = ref([])
 /** 当前用户生效的音乐库根目录（用于热更新过滤） */
@@ -44,6 +47,10 @@ export const libraryTrackTotal = ref(0)
 export const libraryLoading = ref(false)
 export const libraryMetaLoading = ref(false)
 export const libraryScanned = ref(false)
+/** 服务端 library_index 版本；与本地快照比较决定是否拉取 */
+export const libraryIndexRevision = ref(0)
+/** true：本地快照与服务器 revision 一致，打开页面不必再拉曲目 */
+export const libraryIndexFresh = ref(false)
 export const libraryLoadProgress = ref('')
 export const libraryScanPhase = ref('')
 export const libraryScanCurrent = ref(0)
@@ -183,7 +190,7 @@ async function reloadTracksFromCache(api) {
     libraryTrackTotal.value = total
     if (cachedList.length || total === 0) {
       libraryTracks.value = sortTracksByMtime(cachedList.map(fileToLibraryTrack))
-      saveSessionTracks(libraryTracks.value)
+      saveLibrarySnapshot()
     }
   } catch {}
 }
@@ -300,6 +307,10 @@ export async function loadPlaylistCardsFromServer(api, { limit } = {}) {
     const p = pathFromLibraryKey(r.key) || r.localPath || r.filePath
     if (p) pathSet.add(p)
   }
+  for (const s of playStats.value) {
+    const p = pathFromLibraryKey(s.key) || s.localPath || s.filePath
+    if (p) pathSet.add(p)
+  }
   for (const t of roamTracks.value) {
     const p = pathFromLibraryKey(t?.key) || t?.localPath || t?.filePath
     if (p) pathSet.add(p)
@@ -355,10 +366,15 @@ export async function fetchAllLibraryTracks(api, filter = {}, { max = 2000 } = {
   return items
 }
 
-async function finishBackgroundScan(api) {
+async function finishBackgroundScan(api, payload = {}) {
   libraryMetaLoading.value = false
   resetScanProgress()
+  if (payload?.revision != null) {
+    libraryIndexRevision.value = Number(payload.revision) || 0
+  }
   await reloadTracksFromCache(api)
+  libraryIndexFresh.value = true
+  saveLibrarySnapshot()
   syncAllImportedPlaylists()
   bumpLibraryBrowseRevision()
 }
@@ -404,6 +420,76 @@ function saveSessionTracks(tracks) {
       sessionStorage.setItem(sessionTracksKey(), JSON.stringify(slim))
     } catch {}
   }, 400)
+}
+
+function tracksFromSlim(list) {
+  if (!Array.isArray(list) || !list.length) return []
+  return list.map((file) => fileToLibraryTrack({
+    ...file,
+    filePath: file.filePath || file.localPath,
+  }))
+}
+
+function slimLibraryTracks(tracks) {
+  const source = (tracks && tracks.length ? tracks : libraryTracks.value) || []
+  return source.slice(0, LIBRARY_SNAPSHOT_TRACK_LIMIT).map((t) => ({
+    filePath: t.filePath || t.localPath,
+    localPath: t.localPath || t.filePath,
+    title: t.name,
+    artist: t.singer,
+    album: t.album,
+    picUrl: t.picUrl || t.img || '',
+    hasPicture: t.hasPicture,
+    mtime: t.mtime || 0,
+    year: t.year || '',
+    genre: t.genre || '',
+    format: t.format || '',
+    duration: t.duration || 0,
+    track: t.trackNo || '',
+  }))
+}
+
+export function saveLibrarySnapshot() {
+  try {
+    const payload = {
+      revision: libraryIndexRevision.value,
+      trackTotal: libraryTrackTotal.value,
+      musicRoots: libraryMusicRoots.value || [],
+      tracks: slimLibraryTracks(libraryTracks.value),
+    }
+    localStorage.setItem(librarySnapshotKey(), JSON.stringify(payload))
+  } catch {}
+  saveSessionTracks(libraryTracks.value)
+}
+
+/** 从 localStorage 立刻还原工作集，打开音乐库不必等扫描 */
+export function hydrateLibrarySnapshot() {
+  try {
+    const raw = localStorage.getItem(librarySnapshotKey())
+    if (raw) {
+      const data = JSON.parse(raw)
+      libraryIndexRevision.value = Number(data?.revision) || 0
+      if (Array.isArray(data?.musicRoots) && data.musicRoots.length) {
+        libraryMusicRoots.value = data.musicRoots
+      }
+      const total = Number(data?.trackTotal)
+      if (Number.isFinite(total) && total >= 0) libraryTrackTotal.value = total
+      if (Array.isArray(data?.tracks) && data.tracks.length && !libraryTracks.value.length) {
+        libraryTracks.value = sortTracksByMtime(tracksFromSlim(data.tracks))
+      }
+      if (libraryTracks.value.length || libraryTrackTotal.value > 0) {
+        libraryScanned.value = true
+      }
+      return true
+    }
+  } catch {}
+  const sessionTracks = loadSessionTracks()
+  if (sessionTracks?.length && !libraryTracks.value.length) {
+    libraryTracks.value = sortTracksByMtime(sessionTracks)
+    libraryScanned.value = true
+    return true
+  }
+  return false
 }
 
 /** 从搜索/发现页挑选歌曲加入歌单时设置 */
@@ -716,6 +802,8 @@ function clearInMemoryUserData() {
   libraryTrackTotal.value = 0
   libraryScanned.value = false
   libraryMusicRoots.value = []
+  libraryIndexRevision.value = 0
+  libraryIndexFresh.value = false
 }
 
 function migrateLegacyLocalUserData(userId) {
@@ -781,6 +869,7 @@ export async function initLibraryUserData(api, user = null) {
     clearInMemoryUserData()
   }
   activeUserId = nextId
+  hydrateLibrarySnapshot()
   migrateLegacyLocalUserData(nextId)
   // 漫游歌单是本地动态数据，不参与服务端同步，按用户隔离
   roamTracks.value = loadRoamTracks()
@@ -2504,7 +2593,7 @@ export function removeLibraryTracks(filePaths) {
     return true
   })
   const n = before - libraryTracks.value.length
-  if (n > 0) saveSessionTracks(libraryTracks.value)
+  if (n > 0) saveLibrarySnapshot()
   libraryTrackTotal.value = Math.max(0, libraryTrackTotal.value - raw.length)
   // 清掉收藏/最近/漫游/歌单中的幽灵本地曲，并通知推荐卡片刷新
   pruneLocalPlayRefs(raw)
@@ -2533,21 +2622,40 @@ export async function scanLibrary(api, { force = false, resync = false, dirs: re
 
     const softResync = resync && !force && libraryScanned.value && libraryTracks.value.length > 0
 
-    // 热更新关闭：进入音乐库只读缓存，不触发磁盘增量比对（手动「刷新」force 仍可用）
+    hydrateLibrarySnapshot()
+
+    // 打开/切回音乐库：只问服务器有没有更新（0/1），绝不扫盘。手动「刷新库」走 force。
     if (resync && !force) {
-      await loadLibraryHotUpdateSetting(api)
-      if (!libraryHotUpdateEnabled.value) {
-        if (!libraryTracks.value.length && libraryTrackTotal.value <= 0) {
-          try {
-            libraryLoading.value = true
-            await reloadTracksFromCache(api)
-          } catch {}
+      libraryLoading.value = false
+      libraryScanned.value = true
+      let state = null
+      try {
+        state = await api.library.syncState()
+      } catch {}
+      const revision = Number(state?.revision) || 0
+      const updated = Number(state?.updated ?? state?.dirty) === 1 ? 1 : 0
+      const trackCount = Number(state?.trackCount)
+      if (Number.isFinite(trackCount) && trackCount >= 0) libraryTrackTotal.value = trackCount
+      if (state?.scan?.running) {
+        applyServerScanProgress(state.scan)
+        libraryMetaLoading.value = true
+        const result = {
+          totalTracks: libraryTrackTotal.value || libraryTracks.value.length,
+          scannedTags: Number(state.scan.current) || 0,
+          hadPending: true,
+          skippedHotUpdate: true,
+          resumed: true,
         }
-        libraryScanned.value = true
-        libraryLoading.value = false
+        onComplete?.(result, { force, resync })
+        return result
+      }
+      const sameRevision = revision === libraryIndexRevision.value
+      const hasLocal = libraryTracks.value.length > 0 || libraryTrackTotal.value > 0
+      if (updated === 0 && sameRevision && hasLocal) {
+        libraryIndexFresh.value = true
         libraryMetaLoading.value = false
         const result = {
-          totalTracks: libraryTracks.value.length || libraryTrackTotal.value || 0,
+          totalTracks: libraryTrackTotal.value || libraryTracks.value.length,
           scannedTags: 0,
           hadPending: false,
           skippedHotUpdate: true,
@@ -2555,6 +2663,27 @@ export async function scanLibrary(api, { force = false, resync = false, dirs: re
         onComplete?.(result, { force, resync })
         return result
       }
+      if (!hasLocal || updated === 1 || !sameRevision) {
+        try {
+          await reloadTracksFromCache(api)
+        } catch {}
+      }
+      libraryIndexRevision.value = revision
+      libraryIndexFresh.value = updated === 0
+      libraryScanned.value = true
+      libraryMetaLoading.value = false
+      saveLibrarySnapshot()
+      if ((Number(state?.trackCount) || 0) === 0 && updated === 0) {
+        api.library.scanStart(false).catch(() => {})
+      }
+      const result = {
+        totalTracks: libraryTrackTotal.value || libraryTracks.value.length,
+        scannedTags: 0,
+        hadPending: false,
+        skippedHotUpdate: updated === 0,
+      }
+      onComplete?.(result, { force, resync })
+      return result
     }
 
     if (!softResync) {
@@ -2696,7 +2825,11 @@ export async function scanLibrary(api, { force = false, resync = false, dirs: re
         scannedTags: tagScanned,
         hadPending: pendingCount > 0 || Boolean(scan.running),
       }
-      saveSessionTracks(libraryTracks.value)
+      if (startRes.state?.revision != null) {
+        libraryIndexRevision.value = Number(startRes.state.revision) || 0
+      }
+      libraryIndexFresh.value = !scan.running
+      saveLibrarySnapshot()
       if (!serverScanActive) syncAllImportedPlaylists()
       if (!serverScanActive) onComplete?.(result, { force, resync })
       return result
@@ -3184,7 +3317,7 @@ export function initLibraryHotReload(api, { onWS } = {}) {
     if (!hotReloadApi) return
     if (payload?.trackCount != null) applyLibraryTrackCount(payload.trackCount)
     else if (payload?.totalTracks != null) applyLibraryTrackCount(payload.totalTracks)
-    await finishBackgroundScan(hotReloadApi)
+    await finishBackgroundScan(hotReloadApi, payload)
     const hadPending = Boolean(payload?.hadPending)
     const scanned = Number(payload?.scannedTags) || 0
     const current = libraryHotNotice.value

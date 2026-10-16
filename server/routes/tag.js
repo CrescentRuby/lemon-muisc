@@ -105,7 +105,7 @@ function assertMusicDirAccess(dirPath, userId = null) {
     return {
       ok: false,
       status: 400,
-      error: `目录不可读：${dirPath}（${probe.error || '权限不足'}）。请检查飞牛访问权限与路径设置。`,
+      error: `目录不可读：${dirPath}（${probe.error || '权限不足'}）。请检查音乐库路径、挂载与目录权限。`,
       probe,
     }
   }
@@ -326,7 +326,7 @@ tagRouter.post('/scan', async (req, res) => {
         if (dirPath === '/downloads') {
           tip = `下载目录是空的。若这是下载保存位置属正常；请改点左侧音乐库目录扫描。若音乐库也为空，请到「运行设置」重新保存路径。`
         } else {
-          tip = `目录 ${dirPath} 是空的。请确认路径正确，或到应用设置 → 运行设置 / 访问权限重新授权后保存。`
+          tip = `目录 ${dirPath} 是空的。请确认路径正确，且目录内有音频文件（Docker 请检查 /music 挂载）。`
         }
       } else {
         tip = `目录可读（共 ${probe.entryCount} 项），但未发现支持的音频（mp3/flac/wav/ape/m4a 等）。样例：${probe.sampleNames.join(', ') || '无'}`

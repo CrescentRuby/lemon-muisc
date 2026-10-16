@@ -28,6 +28,8 @@ const routes = [
   { path: '/library/artists', name: 'LibraryArtists', component: () => import('./views/LibraryArtists.vue') },
   { path: '/library/artist', name: 'LibraryArtist', component: () => import('./views/LibraryArtist.vue') },
   { path: '/library/mood', name: 'LibraryMood', component: () => import('./views/LibraryMood.vue') },
+  { path: '/podcasts', name: 'Podcasts', component: () => import('./views/Podcasts.vue') },
+  { path: '/podcasts/:id', name: 'PodcastFeed', component: () => import('./views/PodcastFeed.vue') },
   { path: '/download', name: 'Download', component: () => import('./views/Download.vue') },
   { path: '/file-manager', name: 'FileManager', component: () => import('./views/FileManager.vue') },
   { path: '/tag', redirect: { path: '/file-manager', query: { tab: 'tag' } } },

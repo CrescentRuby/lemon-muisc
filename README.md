@@ -15,7 +15,7 @@
 | 部署方式 | 说明 |
 |----------|------|
 | **飞牛 FPK** | 原生应用，运行时依赖应用中心 **Node.js v22**（有系统证书时自动 HTTPS） |
-| **Docker / 服务器** | [docs/docker.md](docs/docker.md)（HTTPS 需自行挂载证书） |
+| **Docker / 服务器** | 拉镜像即可，见 [docs/docker.md](docs/docker.md) |
 | **开放 API** | [docs/open-api.md](docs/open-api.md) · 本机 `http://<主机>:7983/api/docs` · [OpenAPI](docs/openapi.yaml) |
 | **上架介绍文案** | [docs/store-app-intro.md](docs/store-app-intro.md) |
 
@@ -202,10 +202,25 @@ npm start
 
 ### Docker 快速启动
 
+拉镜像部署，不必 clone、不必 `--build`。完整说明见 [docs/docker.md](docs/docker.md)。
+
 ```bash
-mkdir -p data/music data/downloads data/config
-docker compose up -d --build
+mkdir -p lemon-music/data/{music,downloads,config}
+cd lemon-music
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/jia070310/lemon-muisc/main/docker-compose.yml
+docker compose up -d
 # http://服务器IP:7983
+```
+
+或：
+
+```bash
+docker pull ghcr.io/jia070310/lemon-muisc:latest
+docker run -d --name lemon-music --restart unless-stopped -p 7983:7983 \
+  -e PORT=7983 -e DOWNLOAD_PATH=/downloads -e CONFIG_PATH=/config \
+  -v "$PWD/data/music:/music" -v "$PWD/data/downloads:/downloads" -v "$PWD/data/config:/config" \
+  ghcr.io/jia070310/lemon-muisc:latest
 ```
 
 启用 HTTPS（证书放到 `certs/`）：

@@ -1,13 +1,14 @@
-# 柠檬音乐 v1.2.17.7
+# 柠檬音乐 v1.2.17.8
 
 ## 更新内容
 
-- **系统目录**：封面缓存、发现页缓存改存 `CONFIG_PATH`（飞牛 `@appdata/…/config`），不再写入用户下载目录
-- **安装包**：FPK「加速保存」改存 `CONFIG_PATH/fpk-updates`，预留后台更新复用；打开关于页不再生成「柠檬音乐更新」文件夹
-- **关于页**：交流反馈 / 安装到桌面 / 排查与日志宽屏三栏并排
-- **Docker**：多架构构建避免 QEMU 下 npm 崩溃
+- **播客**：订阅 RSS/Atom，节目加入播放队列；入口在音乐库右上角
+- **DLNA**：播放栏可将本地库或播客投到局域网电视 / 音箱
+- **音乐库**：打开库不再每次全盘扫描，本地缓存配合服务端更新信号
+- **Docker**：默认拉 `ghcr.io/jia070310/lemon-muisc:latest`，`docker compose up -d` 或 `docker pull` + `docker run` 即可，不必 clone / `--build`
+- **路径**：Docker 已挂载 `/music` 时不再误报未配置路径
 
 ## 安装 / 更新
 
-- x86：`lemon-music-1.2.17.7-x86.fpk`
-- ARM：`lemon-music-1.2.17.7-arm.fpk`
+- x86：`lemon-music-1.2.17.8-x86.fpk`
+- ARM：`lemon-music-1.2.17.8-arm.fpk`

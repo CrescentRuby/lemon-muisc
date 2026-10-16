@@ -1,29 +1,28 @@
-# 柠檬音乐 · Docker 自托管（HTTP）
-# 说明见 docs/docker.md
+# 柠檬音乐 · 拉镜像部署（不必 git clone，也不必 --build）
 #
-# 启动：docker compose up -d
-# HTTPS：见 docker-compose.https.yml 与 docs/docker.md
+#   mkdir -p data/music data/downloads data/config
+#   docker compose up -d
+#
+# 浏览器：http://服务器IP:7983
+# 更新：docker compose pull && docker compose up -d
+# 说明：docs/docker.md
 
 services:
   lemon-music:
     image: ghcr.io/jia070310/lemon-muisc:latest
-    build: .
     container_name: lemon-music
     ports:
       - "7983:7983"
     restart: unless-stopped
     environment:
       PORT: "7983"
-      # 容器内路径（勿与飞牛 FPK 的 LEMON_NATIVE 混用）
       DOWNLOAD_PATH: /downloads
       CONFIG_PATH: /config
-      # 可选：界面展示用的宿主机路径文案
-      # MUSIC_HOST_PATH: /data/music
-      # DOWNLOADS_HOST_PATH: /data/downloads
+      # 可选：界面展示用的宿主机路径
+      # MUSIC_HOST_PATH: /volume1/music
+      # DOWNLOADS_HOST_PATH: /volume1/downloads
+      # DLNA 投屏：LEMON_PUBLIC_URL: http://192.168.1.8:7983
     volumes:
-      # 音乐库（应用内路径 /music）
       - ./data/music:/music
-      # 下载目录
       - ./data/downloads:/downloads
-      # 配置与数据库（lx-music.db、设置等）
       - ./data/config:/config

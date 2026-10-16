@@ -24,6 +24,8 @@ const ROUTE_PAGE_MAP = {
   LibraryArtists: 'library',
   LibraryArtist: 'library',
   LibraryMood: 'library',
+  Podcasts: 'podcasts',
+  PodcastFeed: 'podcasts',
   Download: 'download',
   FileManager: 'file-manager',
   TagEditTrack: 'tag',
@@ -35,6 +37,7 @@ const PATH_PAGE_MAP = {
   '/search': 'search',
   '/discover': 'discover',
   '/library': 'library',
+  '/podcasts': 'podcasts',
   '/download': 'download',
   '/file-manager': 'file-manager',
   '/tag': 'file-manager',
@@ -47,6 +50,7 @@ const prefetchers = {
   '/discover': () => import('../views/Discover.vue'),
   '/library': () => import('../views/Library.vue'),
   '/library/mood': () => import('../views/LibraryMood.vue'),
+  '/podcasts': () => import('../views/Podcasts.vue'),
   '/download': () => import('../views/Download.vue'),
   '/file-manager': () => import('../views/FileManager.vue'),
   '/tag': () => import('../views/FileManager.vue'),
@@ -62,6 +66,7 @@ function resolvePage(to) {
     if (PATH_PAGE_MAP[path]) return PATH_PAGE_MAP[path]
     if (path.startsWith('/discover')) return 'discover'
     if (path.startsWith('/library')) return 'library'
+    if (path.startsWith('/podcasts')) return 'podcasts'
     if (path.startsWith('/tag')) return 'tag'
     if (path.startsWith('/file-manager')) return 'file-manager'
     return 'default'
@@ -95,4 +100,4 @@ export function prefetchRoute(path) {
   loader().catch(() => prefetched.delete(normalized))
 }
 
-export const MAIN_TAB_NAMES = ['Search', 'Discover', 'Library', 'LibraryMood', 'Download', 'FileManager', 'Settings', 'About']
+export const MAIN_TAB_NAMES = ['Search', 'Discover', 'Library', 'LibraryMood', 'Podcasts', 'PodcastFeed', 'Download', 'FileManager', 'Settings', 'About']

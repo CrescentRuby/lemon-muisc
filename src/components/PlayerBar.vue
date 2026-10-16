@@ -188,6 +188,18 @@
       </button>
       <button
         v-if="currentPlaying"
+        class="ctrl-btn ctrl-cast desktop-extra"
+        type="button"
+        title="投屏到 DLNA"
+        @click="showDlnaCast = true"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+          <line x1="2" y1="20" x2="2.01" y2="20"/>
+        </svg>
+      </button>
+      <button
+        v-if="currentPlaying"
         class="ctrl-btn ctrl-playlist desktop-extra"
         type="button"
         title="加入歌单"
@@ -317,6 +329,18 @@
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
             <span>{{ isCurrentFavorite ? '取消收藏' : '收藏' }}</span>
+          </button>
+          <button
+            type="button"
+            class="more-item"
+            :disabled="!currentPlaying"
+            @click="onMoreOpenDlna"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+              <line x1="2" y1="20" x2="2.01" y2="20"/>
+            </svg>
+            <span>投屏到 DLNA</span>
           </button>
           <button
             type="button"
@@ -496,6 +520,7 @@
       @close="pickPlaylistTrack = null"
       @added="onAddedToPlaylist"
     />
+    <DlnaCastModal :open="showDlnaCast" @close="showDlnaCast = false" />
   </div>
 </template>
 
@@ -519,6 +544,7 @@ import SpectrumVisualizer from './SpectrumVisualizer.vue'
 import CoverArt from './CoverArt.vue'
 import PickPlaylistModal from './PickPlaylistModal.vue'
 import SongInfoModal from './SongInfoModal.vue'
+import DlnaCastModal from './DlnaCastModal.vue'
 import { isFavorite, toggleFavorite } from '../stores/library.js'
 import {
   moodRadioActive,
@@ -547,6 +573,7 @@ const showVolumePanel = ref(false)
 const showMorePanel = ref(false)
 const showMoreDlQuality = ref(false)
 const downloadMenuOpen = ref(false)
+const showDlnaCast = ref(false)
 const pickPlaylistTrack = ref(null)
 const showSongInfo = ref(false)
 const songInfoPressing = ref(false)
@@ -593,6 +620,7 @@ const canDownloadCurrent = computed(() => {
   const t = currentPlaying.value
   if (!t) return false
   if (currentLocalPath.value) return false
+  if (t.source === 'podcast' || t.podcastEpisodeId) return false
   return true
 })
 
@@ -681,6 +709,11 @@ function cycleSleepTimer() {
 
 function onToggleQueueFavorite(item, source) {
   toggleFavorite({ ...item, source, localPath: item.localPath })
+}
+
+function onMoreOpenDlna() {
+  showMorePanel.value = false
+  showDlnaCast.value = true
 }
 
 function openPickCurrentPlaylist() {

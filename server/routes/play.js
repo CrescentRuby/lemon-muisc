@@ -29,6 +29,7 @@ import { buildMusicCdnHeaders } from '../utils/musicCdnHeaders.js'
 import { ensureSmoothPlayAac, canSmoothOrRepairTranscode, warmSmoothPlayAac } from '../utils/smoothPlay.js'
 import { isPlatformEnabled } from '../utils/enabledPlatforms.js'
 import { AVAILABLE_SOURCES } from '../musicSdk.js'
+import { getEpisodeForUser } from '../utils/podcastStore.js'
 
 export const playRouter = Router()
 
@@ -134,6 +135,7 @@ function pickLibraryTrackId(body = {}) {
   }
   const src = String(body.source || '').trim()
   if (src && src !== 'local') return ''
+  if (body.podcastEpisodeId || body.episodeId) return ''
   return id
 }
 
@@ -202,6 +204,15 @@ playRouter.post('/ticket', (req, res) => {
 playRouter.post('/url', async (req, res) => {
   try {
     const { songId, source, quality, sourceApiId, skipSourceIds, refresh } = req.body
+    const podcastEpisodeId = String(req.body?.podcastEpisodeId || req.body?.episodeId || '').trim()
+    if (source === 'podcast' || podcastEpisodeId) {
+      const ep = getEpisodeForUser(req.user?.id, podcastEpisodeId || String(req.body?.id || '').trim())
+      if (!ep?.audioUrl) {
+        return res.status(404).json({ error: '播客节目不存在', code: 'PODCAST_NOT_FOUND' })
+      }
+      const url = signPlayStreamUrl(wrapPlayUrl(ep.audioUrl, 'podcast'), req)
+      return res.json({ ok: true, url, podcast: true })
+    }
     const libraryTrackId = pickLibraryTrackId(req.body)
     const localFilePath = resolveLocalFilePath(req.body)
     // 仅显式音乐库 trackId 找不到时 404；在线曲目的平台 id 不得走此分支

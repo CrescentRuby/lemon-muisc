@@ -1,4 +1,4 @@
-const META_TAGS = ['name', 'description', 'version', 'author', 'homepage']
+const META_TAGS = ['name', 'description', 'version', 'author', 'homepage', 'updateurl', 'sourceurl', 'url']
 
 /**
  * 从 LX Music 自定义音源脚本头部注释提取元数据。
@@ -38,4 +38,20 @@ export function metaToDbFields(meta, defaults = {}) {
     version: meta.version || defaults.version || '',
     homepage: meta.homepage || defaults.homepage || '',
   }
+}
+
+/** 脚本自带的可拉取更新地址：@updateUrl / @sourceUrl / @url / @homepage */
+export function scriptUpdateUrl(meta = {}, homepage = '') {
+  const candidates = [
+    meta.updateurl,
+    meta.sourceurl,
+    meta.url,
+    homepage,
+    meta.homepage,
+  ]
+  for (const raw of candidates) {
+    const url = String(raw || '').trim()
+    if (/^https?:\/\//i.test(url)) return url
+  }
+  return ''
 }

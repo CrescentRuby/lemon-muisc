@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Lemon Music Open API",
-    "version": "1.2.17.7",
+    "version": "1.2.17.8",
     "description": "柠檬音乐自托管开放 API。路径同时挂载在 `/api` 与 `/api/v1`（推荐客户端使用 `/api/v1`）。\n\n鉴权：`Authorization: Bearer <sessionToken>`；音频流可用 `?ticket=` 短时效媒体票（也可兼容 `?token=` 会话 JWT）。\n\n曲目稳定 ID：库内 `id` / `trackId` 为 UUID；在线曲目请用 `songId`+`source`，勿把平台 id 当作 trackId。\n\n播放换源：同一次 `/play/url` 内可用 `sourceApiId` / `skipSourceIds` 控制音源脚本；跨平台搜曲由客户端自行完成后再调本接口。\n\n本地转码：`smooth=true` 请求 AAC 流；关闭用户设置「本地转码」时客户端应直出 `/play/local`（APE / DSF / DFF 除外，始终转码）。\n\n稳定性：已公开路径与字段尽量固定；新功能新开路由或可选字段，避免破坏第三方客户端（详见 docs/open-api.md）。\n\n人读文档见 docs/open-api.md；交互文档 `GET /api/docs`。",
     "license": {
       "name": "MIT"
@@ -94,6 +94,14 @@
     {
       "name": "backup",
       "description": "备份"
+    },
+    {
+      "name": "podcasts",
+      "description": "播客 RSS 订阅"
+    },
+    {
+      "name": "dlna",
+      "description": "DLNA 投屏"
     }
   ],
   "paths": {
@@ -5710,6 +5718,41 @@
         }
       }
     },
+    "/library/sync-state": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "曲库版本信号（updated 0/1，无扫盘）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/library/scan-settings": {
       "get": {
         "tags": [
@@ -7481,6 +7524,427 @@
           "backup"
         ],
         "summary": "导入备份",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/podcasts": {
+      "get": {
+        "tags": [
+          "podcasts"
+        ],
+        "summary": "播客订阅列表",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "podcasts"
+        ],
+        "summary": "订阅 RSS",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/podcasts/{id}": {
+      "get": {
+        "tags": [
+          "podcasts"
+        ],
+        "summary": "订阅详情",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "订阅 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "podcasts"
+        ],
+        "summary": "取消订阅",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "订阅 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/podcasts/{id}/episodes": {
+      "get": {
+        "tags": [
+          "podcasts"
+        ],
+        "summary": "节目标题分页",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "订阅 ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "页",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/podcasts/{id}/refresh": {
+      "post": {
+        "tags": [
+          "podcasts"
+        ],
+        "summary": "刷新订阅",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "订阅 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dlna/devices": {
+      "get": {
+        "tags": [
+          "dlna"
+        ],
+        "summary": "搜索 DLNA 渲染器",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "description": "1=重新 SSDP",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dlna/play": {
+      "post": {
+        "tags": [
+          "dlna"
+        ],
+        "summary": "投送到设备（本地库或播客）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dlna/stop": {
+      "post": {
+        "tags": [
+          "dlna"
+        ],
+        "summary": "停止投屏",
         "security": [
           {
             "bearerAuth": []

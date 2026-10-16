@@ -75,6 +75,7 @@ export const currentPlayPlatformLabel = computed(() => {
   const key = String(currentPlayPlatform.value || '').trim()
   if (!key) return ''
   if (key === 'local') return '本地'
+  if (key === 'podcast') return '播客'
   return platformLabel(key)
 })
 export const currentPlayQualityLabel = computed(() => {
@@ -285,19 +286,46 @@ async function retryCurrentTrackBeforeSkip(reason = 'stall') {
 /** 听歌排行：实际听满该秒数才计 1 次（暂停不计时） */
 const PLAY_STAT_MIN_SEC = 20
 let playStatAccumSec = 0
-let playStatLastTickMs = 0
+let playStatLastMediaTime = -1
 let playStatCountedKey = ''
 let playStatPendingTrack = null
 
+function commitPlayStatIfDue() {
+  if (!playStatPendingTrack || playStatAccumSec < PLAY_STAT_MIN_SEC) return
+  const key = getTrackKey(playStatPendingTrack, playStatPendingTrack.source)
+    || playStatPendingTrack.key
+    || (playStatPendingTrack.localPath ? `local:${playStatPendingTrack.localPath}` : '')
+  if (!key || playStatCountedKey === key) return
+  playStatCountedKey = key
+  try {
+    recordPlayStat(playStatPendingTrack)
+  } catch {}
+}
+
+/** 切歌 / 播完时把当前曲已听时长写入排行（心情连播尤其容易在 ended 后丢累计） */
+function flushPlayStatSession({ fromAudio = false } = {}) {
+  if (!playStatPendingTrack) return
+  if (fromAudio && audio) {
+    const t = Number(audio.currentTime) || 0
+    const dur = Number(audio.duration) || 0
+    if (t > playStatAccumSec) playStatAccumSec = t
+    if (dur > 0 && dur < PLAY_STAT_MIN_SEC && t >= Math.min(dur * 0.5, dur - 0.05)) {
+      playStatAccumSec = Math.max(playStatAccumSec, PLAY_STAT_MIN_SEC)
+    }
+  }
+  commitPlayStatIfDue()
+}
+
 function beginPlayStatSession(track) {
+  flushPlayStatSession({ fromAudio: true })
   playStatPendingTrack = track || null
   playStatAccumSec = 0
-  playStatLastTickMs = 0
+  playStatLastMediaTime = -1
   playStatCountedKey = ''
 }
 
 function clearPlayStatTick() {
-  playStatLastTickMs = 0
+  playStatLastMediaTime = -1
 }
 
 function tickPlayStatSession() {
@@ -305,20 +333,14 @@ function tickPlayStatSession() {
     clearPlayStatTick()
     return
   }
-  const now = performance.now()
-  if (playStatLastTickMs > 0) {
-    const dt = (now - playStatLastTickMs) / 1000
-    // 忽略过大间隔（切后台休眠等），只累计真实连播片段
-    if (dt > 0 && dt < 2.5) playStatAccumSec += dt
+  const t = Number(audio.currentTime) || 0
+  if (playStatLastMediaTime >= 0) {
+    const dt = t - playStatLastMediaTime
+    // 用媒体时钟累计，避免 timeupdate 被主线程拖慢后墙钟间隔过大被丢掉
+    if (dt > 0 && dt < 8) playStatAccumSec += dt
   }
-  playStatLastTickMs = now
-  if (playStatAccumSec < PLAY_STAT_MIN_SEC) return
-  const key = getTrackKey(playStatPendingTrack, playStatPendingTrack.source)
-  if (!key || playStatCountedKey === key) return
-  playStatCountedKey = key
-  try {
-    recordPlayStat(playStatPendingTrack)
-  } catch {}
+  playStatLastMediaTime = t
+  commitPlayStatIfDue()
 }
 
 const LOCAL_SMOOTH_EXTS = new Set([
@@ -1303,14 +1325,15 @@ function bindAudioElementEvents(el) {
     }
     clearPlaybackError()
     isPaused.value = false
-    // 续播时重新开始计时片段（累计秒数保留）
-    playStatLastTickMs = performance.now()
+    // 续播时接上媒体时钟（累计秒数保留）
+    playStatLastMediaTime = Number(el.currentTime) || 0
     updateMediaSession()
     syncMediaSessionPlaybackState()
     syncMediaSessionPosition()
   })
   el.addEventListener('timeupdate', () => {
     if (audio !== el) return
+    tickPlayStatSession()
     if (uiScrubbing) return
     currentTime.value = audio.currentTime
     // CarPlay / 弱网：勿在 timeupdate 里高频推 Media Session（IPC 过载会卡音）
@@ -1325,7 +1348,6 @@ function bindAudioElementEvents(el) {
       updateActiveLyric(audio.currentTime)
     }
     syncDurationFromAudio()
-    tickPlayStatSession()
     if ((audio.currentTime || 0) > 0.05 && !audio.paused) {
       clearPlaybackKickWatch()
       endPlaybackBuffer()
@@ -1771,6 +1793,8 @@ function pickItemFields(item, queueKey = '') {
     ylyric: cleaned.ylyric || '',
     /** 全屏「改歌词」手动选定，禁止自动拉取覆盖 */
     lyricManual: Boolean(cleaned.lyricManual),
+    podcastEpisodeId: cleaned.podcastEpisodeId || '',
+    podcastFeedId: cleaned.podcastFeedId || '',
   }
 }
 
@@ -2296,6 +2320,8 @@ function resolveNextIndex(fromAuto = false) {
 export function getTrackKey(item, source) {
   const filePath = getTrackFilePath(item)
   if (filePath) return `local:${filePath}`
+  const podcastId = item?.podcastEpisodeId || (item?.source === 'podcast' || source === 'podcast' ? item?.id : '')
+  if (podcastId) return `podcast:${podcastId}`
   if (item?.key) return String(item.key)
   const id = item?.songmid || item?.hash || item?.songId || item?.musicId || item?.copyrightId || item?.id
   const src = item?.source || source || ''
@@ -2365,6 +2391,7 @@ export function initPlayer() {
 let endedHandling = false
 
 async function onTrackEnded() {
+  flushPlayStatSession({ fromAudio: true })
   // 单飞：ended 重入会叠出「当前又播 + 下一首也播」
   if (endedHandling) return
   endedHandling = true
@@ -3370,6 +3397,7 @@ export async function resumeOrTogglePause() {
 export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, skipFailedCombos = false } = {}) {
   if (index < 0 || index >= playQueue.value.length) return
 
+  flushPlayStatSession({ fromAudio: true })
   unlockAudioFromGesture()
 
   if (!skipFailedCombos) failedPlayCombos.clear()

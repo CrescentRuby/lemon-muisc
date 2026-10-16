@@ -407,6 +407,7 @@ add('/library/artists', 'get', '歌手聚合', { tag: 'library', parameters: [q(
 add('/library/albums', 'get', '专辑聚合', { tag: 'library', parameters: [q('page', '页'), q('q', '搜索')] })
 add('/library/genres', 'get', '流派聚合', { tag: 'library' })
 add('/library/sync', 'post', '同步索引', { tag: 'library', body: {} })
+add('/library/sync-state', 'get', '曲库版本信号（updated 0/1，无扫盘）', { tag: 'library' })
 add('/library/scan-settings', 'get', '扫描设置', { tag: 'library' })
 add('/library/scan-settings', 'put', '更新扫描设置', { tag: 'library', body: {} })
 add('/library/scan-start', 'post', '开始扫描', { tag: 'library', body: {} })
@@ -460,6 +461,17 @@ add('/about/download-fpk/status', 'get', 'FPK 下载状态', { tag: 'about', adm
 add('/backup/export', 'get', '导出备份', { tag: 'backup' })
 add('/backup/import', 'post', '导入备份', { tag: 'backup', body: {} })
 
+// —— Podcasts / DLNA ——
+add('/podcasts', 'get', '播客订阅列表', { tag: 'podcasts' })
+add('/podcasts', 'post', '订阅 RSS', { tag: 'podcasts', body: { schema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } })
+add('/podcasts/{id}', 'get', '订阅详情', { tag: 'podcasts', parameters: [p('id', '订阅 ID')] })
+add('/podcasts/{id}', 'delete', '取消订阅', { tag: 'podcasts', parameters: [p('id', '订阅 ID')] })
+add('/podcasts/{id}/episodes', 'get', '节目标题分页', { tag: 'podcasts', parameters: [p('id', '订阅 ID'), q('page', '页'), q('limit', '每页')] })
+add('/podcasts/{id}/refresh', 'post', '刷新订阅', { tag: 'podcasts', parameters: [p('id', '订阅 ID')] })
+add('/dlna/devices', 'get', '搜索 DLNA 渲染器', { tag: 'dlna', parameters: [q('refresh', '1=重新 SSDP')] })
+add('/dlna/play', 'post', '投送到设备（本地库或播客）', { tag: 'dlna', body: {} })
+add('/dlna/stop', 'post', '停止投屏', { tag: 'dlna', body: {} })
+
 const spec = {
   openapi: '3.1.0',
   info: {
@@ -506,6 +518,8 @@ const spec = {
     { name: 'paths', description: '路径管理' },
     { name: 'about', description: '关于' },
     { name: 'backup', description: '备份' },
+    { name: 'podcasts', description: '播客 RSS 订阅' },
+    { name: 'dlna', description: 'DLNA 投屏' },
   ],
   paths,
   components: {

@@ -782,6 +782,7 @@ const canDownloadCurrent = computed(() => {
   const t = currentPlaying.value
   if (!t) return false
   if (currentLocalPath.value) return false
+  if (t.source === 'podcast' || t.podcastEpisodeId) return false
   return true
 })
 

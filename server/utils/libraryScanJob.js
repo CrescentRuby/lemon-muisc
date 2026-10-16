@@ -15,6 +15,7 @@ import {
   notifyLibraryScanProgress,
   notifyLibraryScanComplete,
 } from './libraryNotify.js'
+import { finalizeLibraryIndexUpdate } from './libraryIndexState.js'
 
 const BATCH_SIZE = 20
 
@@ -75,6 +76,7 @@ async function runScanJob(precomputed, scanDirs) {
     }
 
     const pending = syncResult.pending || []
+    const removedCount = syncResult.removed?.length || 0
     scanState.phase = 'tags'
     scanState.total = pending.length
     scanState.current = 0
@@ -86,11 +88,14 @@ async function runScanJob(precomputed, scanDirs) {
       scanState.running = false
       scanState.finishedAt = Date.now()
       emitProgress()
+      const revision = finalizeLibraryIndexUpdate({ changed: removedCount > 0 && !abortRequested })
       notifyLibraryScanComplete({
         totalTracks: getAllCachedTracks().length,
         scannedTags: 0,
         hadPending: false,
         trackCount: countCachedTracks(),
+        revision,
+        updated: 0,
       })
       try {
         const { scheduleMoodAutoAnalyze } = await import('./moodAnalyzeJob.js')
@@ -118,11 +123,16 @@ async function runScanJob(precomputed, scanDirs) {
     scanState.running = false
     scanState.finishedAt = Date.now()
     emitProgress()
+    const revision = finalizeLibraryIndexUpdate({
+      changed: !abortRequested && (pending.length > 0 || removedCount > 0),
+    })
     notifyLibraryScanComplete({
       totalTracks: getAllCachedTracks().length,
       scannedTags: scanState.scanned,
       hadPending: pending.length > 0,
       trackCount: countCachedTracks(),
+      revision,
+      updated: 0,
     })
     if (pending.length > 0) {
       try {

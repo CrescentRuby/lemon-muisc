@@ -176,27 +176,29 @@
             <header class="paths-zone-head">
               <div>
                 <h4 class="paths-section-title">数据目录</h4>
-                <p class="paths-zone-desc">应用实际读写的 NAS 挂载点。改路径请到飞牛应用设置保存后，停用再启用。</p>
+                <p class="paths-zone-desc">{{ pathsRuntimeIsContainer ? '容器内挂载点：音乐库 /music，下载 /downloads。改映射请编辑 docker-compose 后重启容器。' : '应用实际读写的 NAS 挂载点。改路径请到飞牛应用设置保存后，停用再启用。' }}</p>
               </div>
             </header>
             <div v-if="needsPathSetup" class="setup-alert">
               <strong>尚未配置数据目录</strong>
-              <p>请到飞牛「应用设置 → <b>访问权限</b>」用文件夹选择器添加音乐库与下载目录（会自动授权）。也可在「运行设置」填写绝对路径。</p>
+              <p v-if="pathsRuntimeIsContainer">请把宿主机音乐目录挂载到容器 <b>/music</b>，下载目录挂到 <b>/downloads</b>（见 docker-compose），重启后再扫描音乐库。也可在下方手动添加音乐库路径。</p>
+              <p v-else>请到飞牛「应用设置 → <b>访问权限</b>」用文件夹选择器添加音乐库与下载目录（会自动授权）。也可在「运行设置」填写绝对路径。</p>
             </div>
             <div v-else class="paths-inner">
               <div class="summary-row">
                 <span class="summary-key">音乐库</span>
-                <code class="summary-val">{{ mountInfo?.music?.host || '未设置' }}</code>
+                <code class="summary-val">{{ mountInfo?.music?.host || (pathsRuntimeIsContainer ? '/music' : '未设置') }}</code>
               </div>
               <div class="summary-row">
                 <span class="summary-key">下载</span>
-                <code class="summary-val">{{ mountInfo?.downloads?.host || '未设置' }}</code>
+                <code class="summary-val">{{ mountInfo?.downloads?.host || (pathsRuntimeIsContainer ? '/downloads' : '未设置') }}</code>
               </div>
               <div class="summary-row" v-if="mountProbeText">
                 <span class="summary-key">探测</span>
                 <span class="summary-val">{{ mountProbeText }}</span>
               </div>
-              <p class="summary-tip">飞牛应用设置 → 运行设置（或访问权限授权两个文件夹）→ 保存后停用再启用。</p>
+              <p v-if="pathsRuntimeIsContainer" class="summary-tip">Docker：修改宿主机卷映射后重启容器。下方「音乐库路径」用于扫描，默认已包含 /music。</p>
+              <p v-else class="summary-tip">飞牛应用设置 → 运行设置（或访问权限授权两个文件夹）→ 保存后停用再启用。</p>
             </div>
           </section>
 
@@ -677,9 +679,16 @@
           <button
             class="btn-ghost btn-sm"
             type="button"
-            :disabled="checkingSourceUpdates || !sourceList.length"
+            :disabled="checkingSourceUpdates || sourceUpdatingAll || !sourceList.length"
             @click="checkSourceUpdates"
           >{{ checkingSourceUpdates ? '检查中…' : '检查音源更新' }}</button>
+          <button
+            v-if="outdatedSourceCount"
+            class="btn-primary btn-sm"
+            type="button"
+            :disabled="checkingSourceUpdates || sourceUpdatingAll || Boolean(sourceUpdatingId)"
+            @click="applyAllSourceUpdates"
+          >{{ sourceUpdatingAll ? '全部更新中…' : `全部更新 (${outdatedSourceCount})` }}</button>
           <span v-if="sourceUpdateSummary" class="hint">{{ sourceUpdateSummary }}</span>
         </div>
 
@@ -707,12 +716,13 @@
                     :title="s.health.tip"
                   >{{ s.health.badge }}</span>
                   <span
-                    v-if="sourceUpdateMap[s.id]?.hasUpdate"
+                    v-if="sourceCanApplyUpdate(s.id)"
                     class="source-update-badge"
                     :title="sourceUpdateTip(s.id)"
                   >有更新</span>
                 </div>
                 <span class="source-meta">{{ s.author || '未知作者' }} · v{{ s.version || '?' }}{{ sourceUpdateMap[s.id]?.remoteVersion ? ` → v${sourceUpdateMap[s.id].remoteVersion}` : '' }}{{ isSourceActive(s.id) ? ' · 已激活' : '' }} · {{ sourcePlatformSummary(s) }}</span>
+                <span v-if="sourceUpdateMap[s.id]?.log" class="source-update-log">{{ sourceUpdateMap[s.id].log }}</span>
                 <span v-if="s.health?.unhealthy && s.health?.tip" class="source-health-tip">{{ s.health.tip }}</span>
                 <span v-if="autoClosedNotice(s)" class="source-autoclose-tip">{{ autoClosedNotice(s) }}</span>
                 <div v-if="s.health?.unhealthy && healthPlatformChips(s).length" class="source-health-platforms">
@@ -741,9 +751,9 @@
                 </div>
                 <button v-if="s.health?.unhealthy || autoClosedNotice(s)" class="btn-sm btn-ghost" @click="dismissSourceHealth(s)">知道了</button>
                 <button
-                  v-if="isAdminUser && sourceUpdateMap[s.id]?.hasUpdate"
+                  v-if="isAdminUser && sourceCanApplyUpdate(s.id)"
                   class="btn-sm btn-primary"
-                  :disabled="sourceBusyId === s.id || sourceUpdatingId === s.id || checkingSourceUpdates"
+                  :disabled="sourceBusyId === s.id || sourceUpdatingId === s.id || sourceUpdatingAll || checkingSourceUpdates"
                   @click="applySourceUpdate(s)"
                 >{{ sourceUpdatingId === s.id ? '更新中…' : '更新' }}</button>
                 <button
@@ -1540,8 +1550,17 @@ const importingUrl = ref(false)
 const importingFiles = ref(false)
 const checkingSourceUpdates = ref(false)
 const sourceUpdatingId = ref('')
+const sourceUpdatingAll = ref(false)
 const sourceUpdateMap = ref({})
 const sourceUpdateSummary = ref('')
+function sourceCanApplyUpdate(id) {
+  const u = sourceUpdateMap.value[id]
+  return Boolean(u?.hasUpdate && /^https?:\/\//i.test(String(u.updateUrl || '')))
+}
+
+const outdatedSourceCount = computed(() =>
+  sourceList.value.filter((s) => sourceCanApplyUpdate(s.id)).length,
+)
 /** 正在激活/停用的音源 id，避免无反馈空等像卡死 */
 const sourceBusyId = ref('')
 const PLATFORM_SHORT = { tx: 'QQ', wy: '云', kw: '酷', kg: '狗', mg: '咪' }
@@ -1597,6 +1616,7 @@ const fnosAvailable = ref(false)
 const pickingFolder = ref(false)
 const activeTab = ref('paths')
 const needsPathSetup = ref(false)
+const pathsRuntimeIsContainer = ref(false)
 const mountInfo = ref(null)
 const mountProbeText = ref('')
 const ffmpegStatus = ref({
@@ -2522,11 +2542,14 @@ async function loadPaths() {
     const res = await api.paths.list()
     applyPathsInfo(res)
     needsPathSetup.value = Boolean(res.setup?.needsPathConfig)
+    pathsRuntimeIsContainer.value = Boolean(res.setup?.isContainer)
     mountInfo.value = res.setup?.mountInfo || null
     const mp = res.setup?.musicProbe
     const musicLabel = '音乐库'
     if (res.setup?.mountLooksEmpty) {
-      mountProbeText.value = '警告：音乐库目录是空的。请到「运行设置」确认路径并停用后重新启用。'
+      mountProbeText.value = pathsRuntimeIsContainer.value
+        ? '警告：容器内 /music 是空的。请把宿主机歌曲目录挂到 /music 后重启容器。'
+        : '警告：音乐库目录是空的。请到「运行设置」确认路径并停用后重新启用。'
     } else if (mp?.readable) {
       mountProbeText.value = `探测 ${musicLabel}：共 ${mp.entryCount} 项，音频 ${mp.audioCount} 个`
     } else if (mp?.error) {
@@ -3229,7 +3252,68 @@ function sourceUpdateTip(id) {
   if (!u?.hasUpdate) return ''
   if (u.remoteVersion) return `远程 v${u.remoteVersion}（当前 v${u.currentVersion || '?'}）`
   if (u.log) return u.log
+  if (u.updateUrl) return `可从更新地址拉取新脚本`
   return '检测到可更新脚本'
+}
+
+function markSourceUpdated(id) {
+  const next = { ...sourceUpdateMap.value }
+  delete next[id]
+  sourceUpdateMap.value = next
+  const left = Object.values(next).filter((u) => u.hasUpdate).length
+  sourceUpdateSummary.value = left ? `仍有 ${left} 个可更新` : ''
+}
+
+async function applySourceUpdate(source, { silent = false } = {}) {
+  const id = source?.id || source
+  if (!id || sourceUpdatingId.value) return { ok: false }
+  sourceUpdatingId.value = id
+  try {
+    const hint = sourceUpdateMap.value[id]
+    const res = await api.source.updateSource(id, hint?.updateUrl || '')
+    if (res.error) throw new Error(res.error)
+    if (!silent) {
+      showToast(
+        res.reloadError
+          ? `已更新 ${res.name}，请手动重新激活`
+          : `已更新 ${res.name}${res.version ? ` → v${res.version}` : ''}`,
+        res.reloadError ? 'warning' : 'success',
+      )
+    }
+    markSourceUpdated(id)
+    if (!silent) sourceList.value = await api.source.list()
+    return { ok: true, res }
+  } catch (err) {
+    if (!silent) showToast(err.message || '更新失败', 'error')
+    return { ok: false, error: err.message || '更新失败' }
+  } finally {
+    sourceUpdatingId.value = ''
+  }
+}
+
+async function applyAllSourceUpdates() {
+  const targets = sourceList.value.filter((s) => sourceCanApplyUpdate(s.id))
+  if (!targets.length || sourceUpdatingAll.value) return
+  sourceUpdatingAll.value = true
+  let okCount = 0
+  const failed = []
+  try {
+    for (const s of targets) {
+      const result = await applySourceUpdate(s, { silent: true })
+      if (result.ok) okCount += 1
+      else failed.push(`${s.name}：${result.error || '失败'}`)
+    }
+    sourceList.value = await api.source.list()
+    if (failed.length && okCount) {
+      showToast(`已更新 ${okCount} 个，失败 ${failed.length} 个`, 'warning')
+    } else if (failed.length) {
+      showToast(failed[0], 'error')
+    } else {
+      showToast(`已更新 ${okCount} 个音源`, 'success')
+    }
+  } finally {
+    sourceUpdatingAll.value = false
+  }
 }
 
 async function importFile(e) {
@@ -3312,33 +3396,6 @@ async function checkSourceUpdates() {
     showToast(err.message || '检查更新失败', 'error')
   } finally {
     checkingSourceUpdates.value = false
-  }
-}
-
-async function applySourceUpdate(source) {
-  const id = source?.id
-  if (!id || sourceUpdatingId.value) return
-  sourceUpdatingId.value = id
-  try {
-    const hint = sourceUpdateMap.value[id]
-    const res = await api.source.updateSource(id, hint?.updateUrl || '')
-    if (res.error) throw new Error(res.error)
-    showToast(
-      res.reloadError
-        ? `已更新 ${res.name}，请手动重新激活`
-        : `已更新 ${res.name}${res.version ? ` → v${res.version}` : ''}`,
-      res.reloadError ? 'warning' : 'success',
-    )
-    const next = { ...sourceUpdateMap.value }
-    delete next[id]
-    sourceUpdateMap.value = next
-    const left = Object.values(next).filter((u) => u.hasUpdate).length
-    sourceUpdateSummary.value = left ? `仍有 ${left} 个可更新` : ''
-    sourceList.value = await api.source.list()
-  } catch (err) {
-    showToast(err.message || '更新失败', 'error')
-  } finally {
-    sourceUpdatingId.value = ''
   }
 }
 
@@ -4454,6 +4511,13 @@ function showToast(text, type = 'info') {
   font-weight: 600;
   color: #fff;
   background: var(--accent, #3d8bfd);
+}
+.source-update-log {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 .import-area { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .import-area-url { align-items: flex-start; }

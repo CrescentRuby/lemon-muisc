@@ -1,0 +1,226 @@
+import dgram from 'dgram'
+import os from 'os'
+import needle from 'needle'
+
+const SSDP_ADDR = '239.255.255.250'
+const SSDP_PORT = 1900
+const DEVICE_TTL_MS = 90_000
+
+/** @type {Map<string, { udn: string, name: string, location: string, controlURL: string, seenAt: number }>} */
+const deviceCache = new Map()
+
+function parseHeaderMap(text) {
+  const map = {}
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const i = line.indexOf(':')
+    if (i <= 0) continue
+    map[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim()
+  }
+  return map
+}
+
+function xmlTag(xml, name) {
+  const re = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i')
+  const m = String(xml || '').match(re)
+  return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : ''
+}
+
+function resolveUrl(base, rel) {
+  try {
+    return new URL(rel, base).href
+  } catch {
+    return String(rel || '')
+  }
+}
+
+function parseAvTransport(xml, location) {
+  const name = xmlTag(xml, 'friendlyName') || xmlTag(xml, 'modelName') || 'DLNA 设备'
+  const udn = xmlTag(xml, 'UDN') || location
+  const services = String(xml).match(/<service\b[\s\S]*?<\/service>/gi) || []
+  let controlURL = ''
+  for (const svc of services) {
+    const type = xmlTag(svc, 'serviceType')
+    if (!/AVTransport/i.test(type)) continue
+    controlURL = xmlTag(svc, 'controlURL')
+    if (controlURL) break
+  }
+  if (!controlURL) return null
+  return {
+    udn,
+    name,
+    location,
+    controlURL: resolveUrl(location, controlURL),
+    seenAt: Date.now(),
+  }
+}
+
+async function fetchDevice(location) {
+  const res = await needle('get', location, {
+    parse_response: false,
+    follow_max: 3,
+    timeout: 8000,
+    headers: { 'User-Agent': 'LemonMusic/1.2 DLNA' },
+  })
+  if ((res.statusCode || 0) >= 400) return null
+  const xml = Buffer.isBuffer(res.body) ? res.body.toString('utf8') : String(res.body || '')
+  return parseAvTransport(xml, location)
+}
+
+function sendSearch(sock) {
+  const targets = [
+    'urn:schemas-upnp-org:device:MediaRenderer:1',
+    'urn:schemas-upnp-org:service:AVTransport:1',
+  ]
+  for (const st of targets) {
+    const msg = Buffer.from(
+      `M-SEARCH * HTTP/1.1\r\nHOST: ${SSDP_ADDR}:${SSDP_PORT}\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ${st}\r\n\r\n`,
+    )
+    sock.send(msg, SSDP_PORT, SSDP_ADDR)
+  }
+}
+
+export async function discoverDlnaDevices({ timeoutMs = 2800 } = {}) {
+  const locations = new Set()
+  await new Promise((resolve) => {
+    const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+    const done = () => {
+      try { sock.close() } catch {}
+      resolve()
+    }
+    sock.on('error', () => done())
+    sock.on('message', (buf) => {
+      const headers = parseHeaderMap(buf.toString('utf8'))
+      const loc = headers.location
+      if (loc) locations.add(loc)
+    })
+    sock.bind(0, () => {
+      try { sock.setBroadcast(true) } catch {}
+      try { sock.addMembership(SSDP_ADDR) } catch {}
+      sendSearch(sock)
+    })
+    setTimeout(done, Math.max(800, timeoutMs))
+  })
+
+  const found = []
+  for (const loc of locations) {
+    try {
+      const device = await fetchDevice(loc)
+      if (!device) continue
+      deviceCache.set(device.udn, device)
+      found.push(device)
+    } catch {}
+  }
+  pruneCache()
+  return listCachedDevices()
+}
+
+function pruneCache() {
+  const now = Date.now()
+  for (const [id, d] of deviceCache) {
+    if (now - d.seenAt > DEVICE_TTL_MS) deviceCache.delete(id)
+  }
+}
+
+export function listCachedDevices() {
+  pruneCache()
+  return [...deviceCache.values()].map((d) => ({
+    udn: d.udn,
+    name: d.name,
+    location: d.location,
+  }))
+}
+
+export function getCachedDevice(udn) {
+  pruneCache()
+  return deviceCache.get(udn) || null
+}
+
+function escapeXml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+async function soap(controlURL, action, bodyInner) {
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:${action} xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">${bodyInner}</u:${action}>
+  </s:Body>
+</s:Envelope>`
+  const res = await needle('post', controlURL, xml, {
+    parse_response: false,
+    timeout: 10000,
+    headers: {
+      'Content-Type': 'text/xml; charset="utf-8"',
+      SOAPACTION: `"urn:schemas-upnp-org:service:AVTransport:1#${action}"`,
+      'User-Agent': 'LemonMusic/1.2 DLNA',
+    },
+  })
+  const text = Buffer.isBuffer(res.body) ? res.body.toString('utf8') : String(res.body || '')
+  if ((res.statusCode || 0) >= 400 || /<s:Fault/i.test(text)) {
+    const msg = xmlTag(text, 'errorDescription') || xmlTag(text, 'errorCode') || `DLNA ${action} 失败`
+    throw new Error(msg)
+  }
+  return text
+}
+
+function didl({ title, artist, album, uri }) {
+  return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
+    <item id="1" parentID="0" restricted="1">
+      <dc:title>${escapeXml(String(title || '音频').slice(0, 200))}</dc:title>
+      <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+      <dc:creator>${escapeXml(String(artist || '').slice(0, 200))}</dc:creator>
+      <upnp:artist>${escapeXml(String(artist || '').slice(0, 200))}</upnp:artist>
+      <upnp:album>${escapeXml(String(album || '').slice(0, 200))}</upnp:album>
+      <res protocolInfo="http-get:*:audio/mpeg:*">${escapeXml(uri)}</res>
+    </item>
+  </DIDL-Lite>`
+}
+
+export async function dlnaPlay(udn, { uri, title, artist, album }) {
+  const device = getCachedDevice(udn)
+  if (!device) throw new Error('设备不在线，请重新搜索')
+  if (!uri) throw new Error('缺少播放地址')
+  try {
+    await soap(device.controlURL, 'Stop', '<InstanceID>0</InstanceID>')
+  } catch {}
+  await soap(device.controlURL, 'SetAVTransportURI', `
+    <InstanceID>0</InstanceID>
+    <CurrentURI>${escapeXml(uri)}</CurrentURI>
+    <CurrentURIMetaData>${escapeXml(didl({ title, artist, album, uri }))}</CurrentURIMetaData>
+  `)
+  await soap(device.controlURL, 'Play', '<InstanceID>0</InstanceID><Speed>1</Speed>')
+  return { ok: true, udn: device.udn, name: device.name }
+}
+
+export async function dlnaStop(udn) {
+  const device = getCachedDevice(udn)
+  if (!device) throw new Error('设备不在线，请重新搜索')
+  await soap(device.controlURL, 'Stop', '<InstanceID>0</InstanceID>')
+  return { ok: true }
+}
+
+export function getAdvertisedBaseUrl(req) {
+  const env = String(process.env.LEMON_PUBLIC_URL || '').replace(/\/+$/, '')
+  if (env) return env
+  const port = process.env.PORT || '7983'
+  const ips = []
+  for (const list of Object.values(os.networkInterfaces() || {})) {
+    for (const a of list || []) {
+      const family = a.family === 4 || a.family === 'IPv4'
+      if (!family || a.internal) continue
+      ips.push(a.address)
+    }
+  }
+  const prefer = ips.find((ip) => ip.startsWith('192.168.') || ip.startsWith('10.'))
+    || ips.find((ip) => /^172\.(1[6-9]|2\d|3[01])\./.test(ip) && !ip.startsWith('172.17.') && !ip.startsWith('172.18.'))
+    || ips[0]
+  if (prefer) return `http://${prefer}:${port}`
+  const host = String(req.headers.host || '').split(',')[0].trim()
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0]
+  if (host) return `${proto}://${host}`
+  return `http://127.0.0.1:${port}`
+}

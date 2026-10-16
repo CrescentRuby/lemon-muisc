@@ -142,7 +142,8 @@
     <div v-if="hasAppNotices && !showFullscreenPlayer" class="app-notice-stack">
       <div v-if="setupBanner" class="app-notice setup-banner">
         <strong>首次使用请先配置数据目录</strong>
-        <span>请到「应用设置 → 访问权限」添加音乐库与下载目录，保存后停用再启用。</span>
+        <span v-if="setupBannerIsContainer">请把宿主机音乐目录挂载到容器的 /music（下载目录挂到 /downloads），然后在「设置 → 文件路径」确认并扫描音乐库。</span>
+        <span v-else>请到「应用设置 → 访问权限」添加音乐库与下载目录，保存后停用再启用。</span>
         <router-link to="/settings" class="setup-link">打开设置</router-link>
         <button type="button" class="btn-ghost btn-sm" @click="dismissSetupBanner">关闭</button>
       </div>
@@ -688,6 +689,7 @@ const hasAppNotices = computed(() => Boolean(
   || playerNotice.value,
 ))
 const setupBanner = ref(false)
+const setupBannerIsContainer = ref(false)
 const SETUP_BANNER_DISMISS_KEY = 'lemon-setup-banner-dismissed'
 
 function isSetupBannerDismissed() {
@@ -1277,6 +1279,7 @@ onMounted(() => {
   })
   api.paths.list().then((res) => {
     const needs = Boolean(res.setup?.needsPathConfig)
+    setupBannerIsContainer.value = Boolean(res.setup?.isContainer)
     setupBanner.value = needs && !isSetupBannerDismissed()
     if (!needs) {
       try { sessionStorage.removeItem(SETUP_BANNER_DISMISS_KEY) } catch {}

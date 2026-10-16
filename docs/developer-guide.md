@@ -240,7 +240,8 @@ lemon-muisc/
 - 旧路径 `/tag/dirs`（deprecated，由 /api/paths 取代）
 
 ### 音乐库 / 路径 / 其它
-- GET `/library/tracks` · POST `/library/sync|scan-start|scan-batch` · GET `/library/scan-settings|scan-status` · PUT `/library/scan-settings`
+- GET `/library/tracks` · GET `/library/sync-state` · POST `/library/sync|scan-start|scan-batch` · GET `/library/scan-settings|scan-status` · PUT `/library/scan-settings`
+- GET/POST `/podcasts` · GET `/podcasts/{id}/episodes` · GET `/dlna/devices` · POST `/dlna/play`
 - GET/PUT `/library/playlists` · GET/PUT `/library/user-data`
 - GET `/library/duplicates` · POST `/library/delete-files`(allowMissing 宽容幽灵记录) · POST `/library/organize`(scope: all|dir|files，按歌手迁移)
 - GET/POST/PUT/DELETE `/paths`(写操作 admin) · GET `/paths/stats` · PUT `/paths/download|download/mode|download/personal`
