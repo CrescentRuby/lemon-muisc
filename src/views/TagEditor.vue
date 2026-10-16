@@ -924,6 +924,7 @@ import {
   libraryTracks,
   groupArtists,
 } from '../stores/library.js'
+import { deleteLibraryDiskFile } from '../utils/deleteLibraryFile.js'
 import { appConfirm, appPrompt } from '../stores/appDialog.js'
 import {
   loadingPlay, isPaused, isPlayingItem, playItem, addToQueue, isInQueue,
@@ -2028,9 +2029,7 @@ async function deleteFile(targetFile = null) {
   if (!ok) return
   deletingPath.value = f.filePath
   try {
-    const res = await api.library.deleteFiles([f.filePath])
-    const failed = res?.data?.failed || []
-    if (failed.length) throw new Error(failed[0]?.error || '删除失败')
+    await deleteLibraryDiskFile(f.filePath)
     removeFileFromList(f.filePath)
     showToast(`已删除：${f.fileName || f.filePath}`, 'success')
   } catch (e) {

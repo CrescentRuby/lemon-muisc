@@ -92,7 +92,7 @@
                 :singer="song.singer"
                 :album="song.album"
               />
-              <div class="song-tags" :title="formatTrackTags({ ...song, album: '' })">{{ formatTrackTags({ ...song, album: '' }) }}</div>
+              <div class="song-tags" :title="formatTrackTags({ ...song, album: '' }, { audioSpec: true })">{{ formatTrackTags({ ...song, album: '' }, { audioSpec: true }) }}</div>
             </div>
             <MobileRowActions
               :open="actionsOpenKey === song.key"
@@ -246,8 +246,8 @@ import PickPlaylistModal from '../components/PickPlaylistModal.vue'
 import { useListPageSize } from '../composables/useListPageSize.js'
 import { formatTrackTags, formatAlbumTags } from '../utils/format.js'
 import { getTrackFilePath } from '../utils/trackPath.js'
+import { confirmDeleteLibraryTrack } from '../utils/deleteLibraryFile.js'
 import { playItem, addToQueue, isPlayingItem, isPaused } from '../stores/player.js'
-import { appConfirm } from '../stores/appDialog.js'
 import {
   libraryScanned,
   librarySongColumns,
@@ -258,7 +258,6 @@ import {
   fetchLibraryTracksPage,
   fetchLibraryArtists,
   fetchLibraryAlbums,
-  removeLibraryTracks,
 } from '../stores/library.js'
 
 const route = useRoute()
@@ -523,28 +522,20 @@ async function onSongCoverClick(song) {
 }
 
 async function deleteSongFile(song) {
-  const filePath = getTrackFilePath(song)
-  if (!filePath || deletingKey.value) return
-  const name = song.name || song.fileName || filePath
-  const ok = await appConfirm({
-    title: '永久删除文件',
-    message: `确定从磁盘永久删除？\n\n${name}`,
-    hint: '此操作不可恢复，文件将从音乐库与硬盘中移除。',
-    confirmText: '删除',
-    danger: true,
-  })
-  if (!ok) return
-
-  deletingKey.value = song.key || filePath
+  if (!song || deletingKey.value) return
+  deletingKey.value = song.key || ''
   try {
-    const res = await api.library.deleteFiles([filePath])
-    const failed = res?.data?.failed || []
-    if (failed.length) {
-      showToast(failed[0]?.error || '删除失败', 'error')
+    const result = await confirmDeleteLibraryTrack(song, {
+      title: '永久删除文件',
+      hint: '此操作不可恢复，文件将从音乐库与硬盘中移除。',
+    })
+    if (result.noPath) {
+      showToast('未找到该歌曲的本地文件', 'error')
       return
     }
-    const deleted = res?.data?.deleted || [filePath]
-    removeLibraryTracks(deleted)
+    if (result.cancelled) return
+    const filePath = result.filePath
+    const deleted = result.deleted || [filePath]
     const before = matchedSongs.value.length
     matchedSongs.value = matchedSongs.value.filter((s) => {
       const p = getTrackFilePath(s)

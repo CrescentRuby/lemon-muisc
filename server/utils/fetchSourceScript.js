@@ -13,9 +13,43 @@ function stripUrlNoise(input) {
     .replace(/\s+/g, '')
 }
 
+function encodeUrlSegment(seg) {
+  if (!seg) return seg
+  // jsDelivr 路径形如 owner/repo@ref，@ 必须保留
+  return seg.split('@').map((part) => {
+    if (!part) return part
+    try {
+      return encodeURIComponent(decodeURIComponent(part))
+    } catch {
+      return encodeURIComponent(part)
+    }
+  }).join('@')
+}
+
+/** 给路径/查询里的非 ASCII（含中文）补百分号编码，避免 new URL / HTTP 请求失败 */
+export function encodeSourceScriptUrl(input) {
+  const raw = stripUrlNoise(input)
+  if (!raw) return ''
+  const m = raw.match(/^(https?:\/\/)([^/?#]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/i)
+  if (!m) return raw
+  const origin = `${m[1]}${m[2]}`
+  const path = (m[3] || '').split('/').map(encodeUrlSegment).join('/')
+  let search = m[4] || ''
+  if (search.length > 1) {
+    try {
+      const qs = new URLSearchParams(search.slice(1))
+      const encoded = qs.toString()
+      search = encoded ? `?${encoded}` : ''
+    } catch {
+      search = search.replace(/[^\x00-\x7F]/g, (ch) => encodeURIComponent(ch))
+    }
+  }
+  return `${origin}${path}${search}`
+}
+
 /** GitHub blob / gist / gitee 页面链接转成可下载的 raw */
 export function normalizeSourceScriptUrl(input) {
-  let url = stripUrlNoise(input)
+  let url = encodeSourceScriptUrl(input)
   if (!url) return ''
   url = url.split('#')[0]
   if (url.startsWith('http://github.com/') || url.startsWith('http://raw.githubusercontent.com/') || url.startsWith('http://gist.github.com/')) {
@@ -23,7 +57,7 @@ export function normalizeSourceScriptUrl(input) {
   }
 
   let m = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/(?:blob|raw)\/([^/]+)\/(.+)$/i)
-  if (m) return `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}/${m[4].split('?')[0]}`
+  if (m) return encodeSourceScriptUrl(`https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}/${m[4].split('?')[0]}`)
 
   m = url.match(/^https?:\/\/gist\.github\.com\/([^/]+)\/([a-f0-9]+)(?:\/[^?#]*)?$/i)
   if (m) return `https://gist.githubusercontent.com/${m[1]}/${m[2]}/raw`
@@ -32,10 +66,10 @@ export function normalizeSourceScriptUrl(input) {
   if (m) return `https://gist.githubusercontent.com/raw/${m[1]}`
 
   m = url.match(/^https?:\/\/gitee\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i)
-  if (m) return `https://gitee.com/${m[1]}/${m[2]}/raw/${m[3]}/${m[4]}`
+  if (m) return encodeSourceScriptUrl(`https://gitee.com/${m[1]}/${m[2]}/raw/${m[3]}/${m[4]}`)
 
   m = url.match(/^https?:\/\/gitcode\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i)
-  if (m) return `https://gitcode.com/${m[1]}/${m[2]}/raw/${m[3]}/${m[4]}`
+  if (m) return encodeSourceScriptUrl(`https://gitcode.com/${m[1]}/${m[2]}/raw/${m[3]}/${m[4]}`)
 
   return url
 }
@@ -62,7 +96,8 @@ function alreadyProxied(url) {
 function toJsdelivr(rawUrl) {
   const m = String(rawUrl).match(/^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i)
   if (!m) return ''
-  return `https://cdn.jsdelivr.net/gh/${m[1]}/${m[2]}@${m[3]}/${m[4]}`
+  const filePath = m[4].split('/').map(encodeUrlSegment).join('/')
+  return `https://cdn.jsdelivr.net/gh/${m[1]}/${m[2]}@${m[3]}/${filePath}`
 }
 
 export function sourceScriptFetchCandidates(url) {

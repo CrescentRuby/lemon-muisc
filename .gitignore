@@ -41,6 +41,8 @@ config/*.db-shm
 config/*.db-wal
 config/*.sqlite
 config/*.sqlite3
+config/cover-cache/
+config/discover-feed-cache/
 config/ADMIN_CREDENTIALS.txt
 config/desktop-protocol
 config/https.json

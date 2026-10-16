@@ -18,7 +18,7 @@
         <div class="genre-hero-info">
           <p class="genre-hero-label">风格</p>
           <h1 class="genre-hero-title">{{ genre.name }}</h1>
-          <p class="genre-hero-meta">{{ genre.trackCount }} 首 · {{ genre.artistCount }} 位歌手</p>
+          <p class="genre-hero-meta">{{ genreTrackTotal }} 首 · {{ genre.artistCount }} 位歌手</p>
           <div class="genre-hero-actions">
             <button class="btn-primary btn-sm" :disabled="!genre.tracks.length" @click="playAll">播放全部</button>
             <button class="btn-ghost btn-sm" :disabled="!genre.tracks.length" @click="shufflePlay">随机混合</button>
@@ -95,7 +95,7 @@
                   :singer="song.singer"
                   :album="song.album"
                 />
-                <div class="track-tags">{{ formatTrackTags({ ...song, album: '' }) }}</div>
+                <div class="track-tags">{{ formatTrackTags({ ...song, album: '' }, { audioSpec: true }) }}</div>
               </div>
               <MobileRowActions
                 :open="actionsOpenKey === song.key"
@@ -123,7 +123,7 @@
           <ListPager
             v-model:page="page"
             v-model:page-size="pageSize"
-            :total="genre?.trackCount || genre?.tracks?.length || 0"
+            :total="genreTrackTotal"
           />
         </template>
       </section>
@@ -151,7 +151,7 @@ import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
 import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
-import { useListPageSize } from '../composables/useListPageSize.js'
+import { useListPageSize, resolveLoadedTotal } from '../composables/useListPageSize.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused } from '../stores/player.js'
 import {
   libraryScanned,
@@ -195,9 +195,15 @@ const mixMainStyle = computed(() => ({
   background: `linear-gradient(135deg, ${theme.value.bg} 0%, rgba(0,0,0,0.04) 100%)`,
   '--genre-accent': theme.value.border,
 }))
-const totalPages = computed(() => Math.max(1, Math.ceil((genre.value?.trackCount || genre.value?.tracks?.length || 0) / pageSize.value)))
+const genreTrackTotal = computed(() => genre.value?.trackCount || 0)
 const listStart = computed(() => (page.value - 1) * pageSize.value)
-const pagedTracks = computed(() => genre.value?.tracks || [])
+const pagedTracks = computed(() => {
+  const tracks = genre.value?.tracks || []
+  const size = Math.max(1, Number(pageSize.value) || 20)
+  if (tracks.length <= size) return tracks
+  const start = (page.value - 1) * size
+  return tracks.slice(start, start + size)
+})
 
 async function loadGenre() {
   const name = genreFromId(genreId.value)
@@ -214,6 +220,7 @@ async function loadGenre() {
         genre: name,
         sort: 'mtime',
         replace: false,
+        syncNavBadge: false,
       }),
       fetchLibraryGenres(api, { page: 1, limit: 1, q: name, sort: 'count' }),
     ])
@@ -225,7 +232,10 @@ async function loadGenre() {
       id: genreId.value,
       name,
       cover,
-      trackCount: tracksRes.total || meta?.trackCount || 0,
+      trackCount: Math.max(
+        resolveLoadedTotal(tracksRes.total, page.value, pageSize.value, tracksRes.items.length),
+        Number(meta?.trackCount) || 0,
+      ),
       artistCount: meta?.artistCount || 0,
       theme: getGenreTheme(name),
       tracks: tracksRes.items,

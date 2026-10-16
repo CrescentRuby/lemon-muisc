@@ -38,6 +38,7 @@ import {
   getLibraryScanStatus,
   startLibraryScanJob,
 } from '../utils/libraryScanJob.js'
+import { getLibraryIndexState, bumpLibraryIndexRevision } from '../utils/libraryIndexState.js'
 import {
   getMoodAnalyzeStatus,
   startMoodAnalyzeJob,
@@ -182,6 +183,8 @@ libraryRouter.get('/albums', (req, res) => {
       q: req.query.q,
       sort: req.query.sort,
       artist: req.query.artist,
+      album: req.query.album,
+      albumArtist: req.query.albumArtist,
       dirs: userDirs,
     })
     res.json({
@@ -267,6 +270,24 @@ libraryRouter.put('/scan-settings', (req, res) => {
   }
 })
 
+/** 曲库版本：updated 0=无新文件 1=有更新。打开页面只读此接口，勿走扫盘 */
+libraryRouter.get('/sync-state', (req, res) => {
+  try {
+    const userDirs = getMusicPathsForUser(req.user?.id)
+    const state = getLibraryIndexState()
+    res.json({
+      ok: true,
+      revision: state.revision,
+      updated: state.dirty,
+      dirty: state.dirty,
+      trackCount: countCachedTracks(userDirs),
+      scan: getLibraryScanStatus(),
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 /** 启动服务端后台扫描（关闭页面后仍会继续） */
 libraryRouter.post('/scan-start', (req, res) => {
   try {
@@ -278,6 +299,27 @@ libraryRouter.post('/scan-start', (req, res) => {
     const dirs = scanAll
       ? (req.user?.role === 'admin' ? getAllMusicScanRoots().filter(Boolean) : userDirs)
       : resolveScanDirs(req.body?.dirs, userId)
+    const scanNow = getLibraryScanStatus()
+    const state = getLibraryIndexState()
+    const indexed = countCachedTracks(userDirs)
+    const needsBootstrap = indexed === 0 && (dirs || []).length > 0
+    if (!force && (scanNow.running || (state.dirty !== 1 && !needsBootstrap))) {
+      return res.json({
+        ok: true,
+        skipped: true,
+        data: {
+          cached: [],
+          pending: [],
+          removed: [],
+          cachedCount: indexed,
+          pendingCount: 0,
+          total: indexed,
+        },
+        scan: scanNow,
+        state: { ...state, updated: state.dirty, trackCount: indexed },
+        dirs,
+      })
+    }
     const partial = isPartialScan(dirs, userId)
     const syncResult = syncLibraryIndex(dirs, { partial })
     if (syncResult.removed.length) {
@@ -296,6 +338,7 @@ libraryRouter.post('/scan-start', (req, res) => {
         total: syncResult.total || 0,
       },
       scan,
+      state: getLibraryIndexState(),
       dirs,
     })
   } catch (e) {
@@ -306,7 +349,14 @@ libraryRouter.post('/scan-start', (req, res) => {
 /** 查询后台扫描状态 */
 libraryRouter.get('/scan-status', (_req, res) => {
   try {
-    res.json({ ok: true, scan: getLibraryScanStatus() })
+    const state = getLibraryIndexState()
+    res.json({
+      ok: true,
+      scan: getLibraryScanStatus(),
+      revision: state.revision,
+      updated: state.dirty,
+      dirty: state.dirty,
+    })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
@@ -456,6 +506,7 @@ libraryRouter.post('/scan-batch', async (req, res) => {
       return res.status(400).json({ error: '单次最多扫描 100 个文件' })
     }
     const data = await scanBatchAndCache(files)
+    if (data?.length) bumpLibraryIndexRevision()
     res.json({ ok: true, data })
   } catch (e) {
     res.status(500).json({ error: e.message })

@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import path from 'path'
 import {
   getMusicPaths,
   getSharedMusicPaths,
@@ -18,7 +17,8 @@ import {
   getEffectivePathsMode,
 } from '../utils/filePaths.js'
 import { onMusicPathRemoved, onMusicPathUpdated } from '../utils/libraryScanSettings.js'
-import { listAudioFiles, probeDir } from '../utils/audioScan.js'
+import fs from 'fs'
+import { countCachedTracks } from '../utils/libraryCache.js'
 
 import { requireAdmin } from '../middleware/auth.js'
 
@@ -30,36 +30,32 @@ function pathsPayload(userId) {
 
 function getMusicLibraryStats(roots) {
   const musicPaths = roots || getSharedMusicPaths()
-  const seen = new Set()
   const dirs = []
+  let totalTracks = 0
 
   for (const dir of musicPaths) {
-    const probe = probeDir(dir)
-    let count = 0
-    if (probe.readable) {
-      try {
-        const files = listAudioFiles(dir)
-        count = files.length
-        for (const filePath of files) {
-          try { seen.add(path.resolve(filePath)) } catch { seen.add(filePath) }
-        }
-      } catch (e) {
-        dirs.push({ path: dir, count: 0, readable: false, error: e.message })
-        continue
-      }
+    let readable = false
+    let error = ''
+    try {
+      readable = fs.existsSync(dir) && fs.statSync(dir).isDirectory()
+    } catch (e) {
+      error = e.message || '不可读'
     }
+    const count = countCachedTracks([dir])
+    totalTracks += count
     dirs.push({
       path: dir,
       count,
-      readable: probe.readable,
-      error: probe.error || '',
+      readable,
+      error,
     })
   }
 
   return {
     musicDirs: musicPaths.length,
-    totalTracks: seen.size,
+    totalTracks,
     dirs,
+    fromIndex: true,
   }
 }
 

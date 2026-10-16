@@ -1,6 +1,6 @@
 {
   "name": "lx-music-nas",
-  "version": "1.2.17.7",
+  "version": "1.2.17.8",
   "description": "Lemon Music - 柠檬音乐下载",
   "private": true,
   "license": "MIT",
@@ -17,7 +17,7 @@
     "fpk:build": "powershell -ExecutionPolicy Bypass -File scripts/build-fpk.ps1",
     "fpk:build:bundle": "powershell -ExecutionPolicy Bypass -File scripts/build-fpk.ps1 -BundleNodeModules",
     "fpk:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-fpk-release.ps1",
-    "docker:build": "docker compose build",
+    "docker:build": "docker compose -f docker-compose.yml -f docker-compose.build.yml build",
     "docker:up": "docker compose up -d",
     "docker:up:https": "docker compose -f docker-compose.yml -f docker-compose.https.yml up -d"
   },

@@ -206,5 +206,36 @@ function migrateSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_playlist_dl_jobs_user ON playlist_download_jobs(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_playlist_dl_jobs_next ON playlist_download_jobs(status, next_run_at);
+
+    CREATE TABLE IF NOT EXISTS podcast_feeds (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      author TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      site_url TEXT DEFAULT '',
+      last_error TEXT DEFAULT '',
+      last_fetched_at INTEGER DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(user_id, url)
+    );
+    CREATE INDEX IF NOT EXISTS idx_podcast_feeds_user ON podcast_feeds(user_id);
+
+    CREATE TABLE IF NOT EXISTS podcast_episodes (
+      id TEXT PRIMARY KEY,
+      feed_id TEXT NOT NULL,
+      guid TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      audio_url TEXT NOT NULL,
+      duration INTEGER DEFAULT 0,
+      pub_date INTEGER DEFAULT 0,
+      image_url TEXT DEFAULT '',
+      created_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(feed_id, guid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_podcast_episodes_feed ON podcast_episodes(feed_id, pub_date DESC);
   `)
 }

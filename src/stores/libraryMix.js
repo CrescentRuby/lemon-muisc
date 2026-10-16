@@ -32,13 +32,14 @@ const CJK = /[\u4e00-\u9fff]/
 const MANDARIN_RE = /华语|国语|普通话|mandarin|c-pop|cpop|chinese|中文/i
 /** 深夜电台：轻柔舒缓向（曲名/歌手/专辑/风格） */
 const NIGHT_RE = /轻音乐|轻柔|舒缓|放松|安静|温柔|治愈|助眠|安眠|睡眠|夜色|夜晚|深夜|月光|星空|雨声|咖啡|慵懒|慢歌|慢节奏|抒情|情歌|民谣|钢琴|吉他|小提琴|纯音乐|器乐|氛围|冥想|瑜伽|疗愈|温馨|暖心|ballad|chill|chillout|lo-?fi|lof|ambient|soft|slow|lullaby|piano|acoustic|jazz|soul|lounge|bossa|classical|instrumental|sleep|relax|calm|peaceful|serene|unplugged|folk/i
-/** 深夜应避开的躁动向 */
-const NIGHT_EXCLUDE_RE = /摇滚|朋克|金属|电音|劲爆|嗨|蹦迪|夜店|舞曲|喊麦|说唱|rap|hip-?hop|trap|dj|edm|house|techno|trance|dubstep|hardcore|metal|punk|rock|remix|混音|club|disco|鼓点|打碟|狂欢|燥|炸|battle|战歌|军歌|运动|健身|跑步/i
+/** 深夜应避开的躁动 / DJ / 舞曲（含车载串烧） */
+const NIGHT_EXCLUDE_RE = /摇滚|朋克|金属|电音|电舞|电嗨|电摇|电混|劲爆|劲舞|热舞|嗨曲|嗨翻|超嗨|蹦迪|夜店|夜场|舞曲|广场舞|喊麦|说唱|串烧|连打|打碟|碟曲|车载|酒吧|迪斯科|动感|抖腿|重低音|低音炮|甩麦|rap|hip-?hop|trap|dj|d\.?j\.?|edm|house|techno|trance|dubstep|electro|dancehall|hardcore|metal|punk|rock|remix|混音|mashup|bootleg|club|disco|鼓点|狂欢|燥|炸|bass|drop|battle|战歌|军歌|运动|健身|跑步/i
 const CAR_RE = /慢摇|节奏|groove|funk|soul|lounge|house|disco|chill|r&b|rnb|reggae|groove/i
-const REMIX_RE = /remix|混音|edit|club/i
+const REMIX_RE = /remix|混音|edit|club|mashup|bootleg|串烧|dj\s*版|dj版/i
 const NET_HOT_RE = /华语|国语|热歌|流行|榜|热门|精选|推荐|中文/i
-const NET_CAR_RE = /慢摇|车载|dj|电音|节奏|夜店|舞曲|remix|酒吧|蹦迪|劲爆|嗨曲|disco/i
-const NET_NIGHT_RE = /轻音乐|轻柔|舒缓|放松|助眠|安眠|睡眠|治愈|纯音乐|钢琴|民谣|夜|深夜|睡前|冥想|瑜伽|氛围|lofi|lo-fi|chill|acoustic|ballad|soft|sleep|relax/i
+const NET_CAR_RE = /慢摇|车载|dj|电音|节奏|夜店|夜场|舞曲|remix|酒吧|蹦迪|劲爆|嗨曲|disco|串烧/i
+/** 勿用单独「夜」：会误匹配夜店/夜场 DJ 歌单 */
+const NET_NIGHT_RE = /轻音乐|轻柔|舒缓|放松|助眠|安眠|睡眠|治愈|纯音乐|钢琴|民谣|深夜|睡前|夜听|夜色|夜晚|晚安|失眠|冥想|瑜伽|氛围|lofi|lo-fi|chillout|chill|acoustic|ballad|sleep|relax|lullaby/i
 
 export const dailyMix = ref(emptyMix())
 export const recoPlaylists = ref([])
@@ -755,11 +756,15 @@ function nightTextBlob(t) {
 function isNightExcludeTrack(t) {
   const text = nightTextBlob(t)
   if (NIGHT_EXCLUDE_RE.test(text)) return true
-  if (REMIX_RE.test(String(t?.name || ''))) return true
+  if (REMIX_RE.test(text)) return true
   return false
 }
 
-/** 越高越适合深夜：明确轻柔标签 > 华语抒情弱信号；排除躁动曲 */
+function isNightFitTrack(t) {
+  return nightScore(t) >= 3
+}
+
+/** 越高越适合深夜：必须有轻柔/抒情信号；排除 DJ/舞曲/车载串烧 */
 function nightScore(t) {
   if (!t || isNightExcludeTrack(t)) return -100
   const text = nightTextBlob(t)
@@ -768,40 +773,44 @@ function nightScore(t) {
   if (/轻音乐|舒缓|助眠|纯音乐|piano|ambient|chill|lo-?fi|lullaby|relax|sleep/i.test(text)) score += 6
   if (/抒情|民谣|情歌|acoustic|ballad|folk/i.test(text)) score += 3
   if (isMandarinTrack(t)) score += 1
-  // 过短/过长都略降权（片头彩蛋、超长电台）
   const dur = Number(t.duration || t.interval || 0)
   if (dur > 0 && dur < 60) score -= 2
   if (dur > 600) score -= 1
   return score
 }
 
+function isNightPlaylistText(text) {
+  const t = String(text || '')
+  if (!NET_NIGHT_RE.test(t)) return false
+  if (NIGHT_EXCLUDE_RE.test(t) || NET_CAR_RE.test(t) || REMIX_RE.test(t)) return false
+  return true
+}
+
 /**
- * 深夜电台：以轻音乐 / 舒缓曲为主，强过滤劲爆/电音/摇滚等。
- * 匹配不足时，从非排除曲里按分数取，绝不回退到整库随机硬曲。
+ * 深夜电台：只收轻柔/抒情向，不回退到无标签的流行或 DJ 曲。
  */
 function buildNightMix(pool, size, seed) {
   const scored = []
   for (const t of pool || []) {
     const s = nightScore(t)
-    if (s < 0) continue
+    if (s < 3) continue
     scored.push({ t, s })
   }
   scored.sort((a, b) => b.s - a.s || 0)
   const strong = scored.filter((x) => x.s >= 8).map((x) => x.t)
-  const soft = scored.filter((x) => x.s >= 3).map((x) => x.t)
-  const anyOk = scored.map((x) => x.t)
-
-  let base = strong
-  if (base.length < Math.min(10, size)) base = soft.length >= Math.min(8, size) ? soft : anyOk
+  const soft = scored.map((x) => x.t)
+  const base = strong.length >= Math.min(8, size) ? strong : soft
   if (!base.length) return []
 
-  // 深夜候选池内：一半口味一半新歌；高分段优先入池
-  const rankedPool = base.slice(0, Math.min(base.length, size * 4))
-  const mixed = pickHalfTasteHalfExplore(rankedPool, size, seed, { avoidRecent: true })
+  const rankedPool = base.slice(0, Math.min(base.length, size * 5))
+  const mixed = pickHalfTasteHalfExplore(rankedPool, size, seed, {
+    avoidRecent: true,
+    pred: isNightFitTrack,
+  })
   if (mixed.length >= Math.min(8, size)) return mixed
   const used = new Set(mixed.map(trackKey))
   const rest = shufflePick(
-    anyOk.filter((t) => !used.has(trackKey(t))),
+    soft.filter((t) => !used.has(trackKey(t))),
     size - mixed.length,
     `${seed}-rest`,
   )
@@ -834,7 +843,7 @@ async function fetchRecommendPage(source, sort) {
 }
 
 async function pickDailyNetworkPlaylists({ force = false, today, uid } = {}) {
-  const storeKey = `lemon-mix-net-v2:${uid}:${today}`
+  const storeKey = `lemon-mix-net-v3:${uid}:${today}`
   if (!force) {
     const cached = readPersist(storeKey)
     if (cached?.source && (cached.hot?.id || cached.car?.id || cached.night?.id)) return cached
@@ -856,7 +865,7 @@ async function pickDailyNetworkPlaylists({ force = false, today, uid } = {}) {
     const night = pickNetPlaylist(
       list,
       `${today}-net-night`,
-      t => NET_NIGHT_RE.test(t),
+      isNightPlaylistText,
       hot?.id,
       { strict: true },
     )
@@ -953,7 +962,7 @@ export async function refreshLibraryMix({ force = false } = {}) {
     const carKey = `lemon-mix-car-v3:${uid}:${week}`
     const nightOn = isNightWindow()
     // v3：轻柔向 + 半口味半探索
-    const nightKey = `lemon-mix-night-v3:${uid}:${today}`
+    const nightKey = `lemon-mix-night-v4:${uid}:${today}`
 
     const restore = (storeKey, builder) => {
       const cached = !force ? readPersist(storeKey) : null

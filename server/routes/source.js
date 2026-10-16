@@ -27,7 +27,7 @@ import {
   recordSourceHealthOutcome,
   sourceHealthPublicView,
 } from '../utils/sourceHealth.js'
-import { parseScriptMeta, metaToDbFields } from '../utils/parseScriptMeta.js'
+import { parseScriptMeta, metaToDbFields, scriptUpdateUrl } from '../utils/parseScriptMeta.js'
 import { fetchSourceScriptFromUrl } from '../utils/fetchSourceScript.js'
 import { compareVersion } from '../utils/version.js'
 import { requireAdmin } from '../middleware/auth.js'
@@ -212,7 +212,7 @@ sourceRouter.post('/import-url', requireAdmin, async (req, res) => {
   }
 })
 
-/** 检查已导入音源是否有新版本（依赖 homepage 或脚本内 @homepage） */
+/** 检查已导入音源是否有新版本（@updateUrl / @sourceUrl / homepage / updateAlert） */
 sourceRouter.post('/check-updates', requireAdmin, async (req, res) => {
   try {
     const onlyId = String(req.body?.id || '').trim()
@@ -225,6 +225,7 @@ sourceRouter.post('/check-updates', requireAdmin, async (req, res) => {
       const meta = parseScriptMeta(row.script || '')
       const homepage = String(row.homepage || meta.homepage || '').trim()
       const alert = getSourceUpdateAlert(row.id)
+      const updateUrl = scriptUpdateUrl(meta, alert?.updateUrl || homepage)
       const item = {
         id: row.id,
         name: row.name,
@@ -232,16 +233,17 @@ sourceRouter.post('/check-updates', requireAdmin, async (req, res) => {
         homepage,
         hasUpdate: false,
         remoteVersion: '',
-        updateUrl: alert?.updateUrl || homepage || '',
+        updateUrl,
         log: alert?.log || '',
         reason: '',
       }
 
-      if (!homepage || !/^https?:\/\//i.test(homepage)) {
-        if (alert?.log || alert?.updateUrl) {
+      if (!updateUrl || !/^https?:\/\//i.test(updateUrl)) {
+        const alertUrl = String(alert?.updateUrl || '').trim()
+        if (alertUrl && /^https?:\/\//i.test(alertUrl)) {
           item.hasUpdate = true
           item.reason = 'script-alert'
-          item.updateUrl = alert.updateUrl || item.updateUrl
+          item.updateUrl = alertUrl
           updates.push(item)
         } else {
           item.reason = 'no-homepage'
@@ -251,7 +253,7 @@ sourceRouter.post('/check-updates', requireAdmin, async (req, res) => {
       }
 
       try {
-        const remoteScript = await fetchScriptFromUrl(homepage)
+        const remoteScript = await fetchScriptFromUrl(updateUrl)
         const remoteMeta = parseScriptMeta(remoteScript)
         item.remoteVersion = remoteMeta.version || ''
         const verNewer = item.remoteVersion
@@ -264,20 +266,25 @@ sourceRouter.post('/check-updates', requireAdmin, async (req, res) => {
           item.hasUpdate = true
           item.reason = 'content'
         } else if (alert?.log || alert?.updateUrl) {
-          item.hasUpdate = true
-          item.reason = 'script-alert'
+          item.hasUpdate = Boolean(item.updateUrl || alert.updateUrl)
+          item.reason = item.hasUpdate ? 'script-alert' : 'up-to-date'
         } else {
           item.reason = 'up-to-date'
         }
-        if (alert?.updateUrl) item.updateUrl = alert.updateUrl
+        if (!item.updateUrl && alert?.updateUrl && /^https?:\/\//i.test(alert.updateUrl)) {
+          item.updateUrl = alert.updateUrl
+        }
         if (alert?.log) item.log = alert.log
       } catch (e) {
         item.reason = 'fetch-failed'
         item.error = e.message
-        if (alert?.log || alert?.updateUrl) {
+        const alertUrl = String(alert?.updateUrl || '').trim()
+        if (alertUrl && /^https?:\/\//i.test(alertUrl) && alertUrl !== updateUrl) {
           item.hasUpdate = true
           item.reason = 'script-alert'
+          item.updateUrl = alertUrl
         }
+        if (alert?.log) item.log = alert.log
       }
       updates.push(item)
     }
@@ -293,7 +300,7 @@ sourceRouter.post('/check-updates', requireAdmin, async (req, res) => {
   }
 })
 
-/** 按 homepage 拉取并原地更新音源（保留 id 与激活状态） */
+/** 按 @updateUrl / homepage 拉取并原地更新音源（保留 id 与激活状态） */
 sourceRouter.post('/update/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id
@@ -303,10 +310,10 @@ sourceRouter.post('/update/:id', requireAdmin, async (req, res) => {
     const meta = parseScriptMeta(row.script || '')
     const alert = getSourceUpdateAlert(id)
     const url = String(
-      req.body?.url || alert?.updateUrl || row.homepage || meta.homepage || '',
+      req.body?.url || scriptUpdateUrl(meta, alert?.updateUrl || row.homepage || ''),
     ).trim()
     if (!url || !/^https?:\/\//i.test(url)) {
-      return res.status(400).json({ error: '该音源没有可用的更新链接（homepage）' })
+      return res.status(400).json({ error: '该音源没有可用的更新链接（@updateUrl / homepage）' })
     }
 
     const script = await fetchScriptFromUrl(url)

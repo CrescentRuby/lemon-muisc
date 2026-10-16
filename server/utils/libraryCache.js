@@ -8,6 +8,7 @@ import { parseFilename } from './filenameParse.js'
 import { readMetaLite, isLikelyTagMojibake } from '../meta.js'
 import { mapWithConcurrency } from './asyncPool.js'
 import { splitArtists } from './artistTag.js'
+import { bumpLibraryIndexRevision } from './libraryIndexState.js'
 
 let tableReady = false
 let columnsReady = false
@@ -428,7 +429,11 @@ export function removeCachePaths(paths) {
     }
     return n
   })
-  return delMany(list)
+  const n = delMany(list)
+  if (n > 0) {
+    bumpLibraryIndexRevision()
+  }
+  return n
 }
 
 /** 磁盘改名后同步缓存主键与 fileName / 文件名解析字段 */
@@ -1070,8 +1075,29 @@ export function queryAlbums(opts = {}) {
     where = `(${where}) AND (album LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album_artist LIKE ? ESCAPE '\\')`
     params.push(like, like, like)
   }
+  const album = String(opts.album || '').trim()
+  if (album) {
+    if (album === '未知专辑') {
+      where = `(${where}) AND (NULLIF(TRIM(album), '') IS NULL OR album = ? COLLATE NOCASE)`
+      params.push(album)
+    } else {
+      where = `(${where}) AND album = ? COLLATE NOCASE`
+      params.push(album)
+    }
+  }
+  const albumArtist = String(opts.albumArtist || '').trim()
+  if (albumArtist) {
+    where = `(${where}) AND (
+      CASE
+        WHEN NULLIF(album_artist, '') IS NOT NULL THEN album_artist
+        WHEN NULLIF(artist, '') IS NOT NULL THEN artist
+        ELSE '未知艺术家'
+      END
+    ) = ? COLLATE NOCASE`
+    params.push(albumArtist)
+  }
   const artist = String(opts.artist || '').trim()
-  if (artist) {
+  if (artist && !albumArtist) {
     const albumClauses = []
     const albumParams = []
     pushArtistMatchFilter(albumClauses, albumParams, artist)

@@ -592,7 +592,7 @@ import { useQualityMenuPosition } from '../utils/qualityMenu.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused, startPlayTracks } from '../stores/player.js'
 import { formatTrackTags } from '../utils/format.js'
 import { getTrackFilePath } from '../utils/trackPath.js'
-import { appConfirm } from '../stores/appDialog.js'
+import { confirmDeleteLibraryTrack } from '../utils/deleteLibraryFile.js'
 import { countAutoFillColumns } from '../utils/grid.js'
 import {
   libraryTracks,
@@ -1481,28 +1481,17 @@ function removeSong(song) {
 
 async function onDeleteSong(song) {
   if (!song || deleteBusy.value) return
-  const filePath = getTrackFilePath(song)
-  if (!filePath) {
-    showToast('未找到该歌曲的本地文件', 'error')
-    return
-  }
-  const ok = await appConfirm({
-    title: '删除本地文件',
-    message: `确定从磁盘永久删除「${song.name}」？`,
-    hint: '文件将被物理删除，并从所有歌单中消失，此操作不可恢复。',
-    confirmText: '删除',
-    danger: true,
-    cover: song.picUrl || song.img || '',
-  })
-  if (!ok) return
   deleteBusy.value = true
   try {
-    const res = await api.library.deleteFiles([filePath])
-    const failed = res?.data?.failed || []
-    if (failed.length) {
-      showToast(failed[0]?.error || '删除失败', 'error')
+    const result = await confirmDeleteLibraryTrack(song, {
+      title: '删除本地文件',
+      hint: '文件将被物理删除，并从所有歌单中消失，此操作不可恢复。',
+    })
+    if (result.noPath) {
+      showToast('未找到该歌曲的本地文件', 'error')
       return
     }
+    if (result.cancelled) return
     const nextSelected = new Set(selectedDownloadKeys.value)
     nextSelected.delete(song.key)
     selectedDownloadKeys.value = nextSelected

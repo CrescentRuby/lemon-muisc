@@ -15,7 +15,7 @@
 | 部署方式 | 说明 |
 |----------|------|
 | **飞牛 FPK** | 原生应用，运行时依赖应用中心 **Node.js v22**（有系统证书时自动 HTTPS） |
-| **Docker / 服务器** | [docs/docker.md](docs/docker.md)（HTTPS 需自行挂载证书） |
+| **Docker / 服务器** | 拉镜像即可，见 [docs/docker.md](docs/docker.md) |
 | **开放 API** | [docs/open-api.md](docs/open-api.md) · 本机 `http://<主机>:7983/api/docs` · [OpenAPI](docs/openapi.yaml) |
 | **上架介绍文案** | [docs/store-app-intro.md](docs/store-app-intro.md) |
 
@@ -202,11 +202,37 @@ npm start
 
 ### Docker 快速启动
 
-```bash
-mkdir -p data/music data/downloads data/config
-docker compose up -d --build
-# http://服务器IP:7983
+拉镜像部署，不必 clone、不必 `--build`。把下面保存为 `docker-compose.yml` 后执行 `docker compose up -d`。完整说明见 [docs/docker.md](docs/docker.md)。
+
+```yaml
+services:
+  lemon-music: # 服务名，一般不用改
+    image: ghcr.io/jia070310/lemon-muisc:latest # 镜像；国内可改 ghcr.1ms.run/jia070310/lemon-muisc:latest
+    container_name: lemon-music # 容器名
+    ports:
+      - "7983:7983" # 宿主机端口:容器端口，改左边即可
+    restart: unless-stopped # 异常退出后自动重启
+    environment:
+      PORT: "7983" # 容器内监听端口，需与上面 ports 右侧一致
+      DOWNLOAD_PATH: /downloads # 容器内下载目录
+      CONFIG_PATH: /config # 容器内配置与数据库目录
+    volumes:
+      - ./data/music:/music # 音乐库：左边改成你的歌曲目录
+      - ./data/downloads:/downloads # 下载保存目录
+      - ./data/config:/config # 配置与数据库，更新镜像不要删
 ```
+
+或：
+
+```bash
+docker pull ghcr.io/jia070310/lemon-muisc:latest
+docker run -d --name lemon-music --restart unless-stopped -p 7983:7983 \
+  -e PORT=7983 -e DOWNLOAD_PATH=/downloads -e CONFIG_PATH=/config \
+  -v "$PWD/data/music:/music" -v "$PWD/data/downloads:/downloads" -v "$PWD/data/config:/config" \
+  ghcr.io/jia070310/lemon-muisc:latest
+```
+
+国内拉不动 `ghcr.io` 时，把 `image` 换成 `ghcr.1ms.run/jia070310/lemon-muisc:latest`（步骤见 [docs/docker.md](docs/docker.md)「国内源拉取」）。
 
 启用 HTTPS（证书放到 `certs/`）：
 

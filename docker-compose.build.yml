@@ -1,0 +1,8 @@
+# 仅在本机从源码构建镜像时叠加（日常部署不需要）
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+
+services:
+  lemon-music:
+    build: .
+    image: ghcr.io/jia070310/lemon-muisc:latest

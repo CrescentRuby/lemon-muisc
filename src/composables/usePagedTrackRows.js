@@ -1,4 +1,5 @@
 import { ref, computed, unref, watch } from 'vue'
+import { LIST_PAGE_SIZE_DEFAULT, countListPages, toListCount } from './useListPageSize.js'
 
 /** 大列表分页展示，避免一次渲染过多 DOM 行 */
 export function usePagedTrackRows(getTracks, { pageSize = 50, enabled = () => true } = {}) {
@@ -6,14 +7,12 @@ export function usePagedTrackRows(getTracks, { pageSize = 50, enabled = () => tr
 
   const resolvedSize = computed(() => {
     const raw = typeof pageSize === 'function' ? pageSize() : unref(pageSize)
-    const n = Number(raw)
-    return Number.isFinite(n) && n > 0 ? n : 50
+    return Math.max(1, toListCount(raw, LIST_PAGE_SIZE_DEFAULT) || LIST_PAGE_SIZE_DEFAULT)
   })
 
   const totalPages = computed(() => {
     if (!enabled()) return 1
-    const total = getTracks().length
-    return Math.max(1, Math.ceil(total / resolvedSize.value))
+    return countListPages(getTracks().length, resolvedSize.value)
   })
 
   const displayRows = computed(() => {

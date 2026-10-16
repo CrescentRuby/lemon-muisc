@@ -19,7 +19,7 @@
         <div class="artist-hero-info">
           <p class="artist-hero-label">歌手</p>
           <h1 class="artist-hero-title">{{ artist.name }}</h1>
-          <p class="artist-hero-meta">{{ artist.trackCount }} 首 · {{ artist.albumCount }} 张专辑</p>
+          <p class="artist-hero-meta">{{ artistTrackTotal }} 首 · {{ artist.albumCount }} 张专辑</p>
           <div class="artist-hero-actions">
             <button class="btn-primary btn-sm" :disabled="!artist.tracks.length" @click="playAll">播放全部</button>
             <button class="btn-ghost btn-sm" :disabled="!artist.tracks.length" @click="shufflePlay">随机播放</button>
@@ -119,7 +119,7 @@
           <ListPager
             v-model:page="page"
             v-model:page-size="pageSize"
-            :total="artist?.trackCount || artist?.tracks?.length || 0"
+            :total="artistTrackTotal"
           />
         </template>
       </section>
@@ -146,10 +146,9 @@ import CoverArt from '../components/CoverArt.vue'
 import MobileRowActions from '../components/MobileRowActions.vue'
 import ListPager from '../components/ListPager.vue'
 import TrackMetaLinks from '../components/TrackMetaLinks.vue'
-import { useListPageSize } from '../composables/useListPageSize.js'
+import { useListPageSize, resolveLoadedTotal } from '../composables/useListPageSize.js'
 import { formatTrackTags } from '../utils/format.js'
-import { getTrackFilePath } from '../utils/trackPath.js'
-import { appConfirm } from '../stores/appDialog.js'
+import { confirmDeleteLibraryTrack } from '../utils/deleteLibraryFile.js'
 import { playItem, addToQueue, isInQueue, isPlayingItem, isPaused } from '../stores/player.js'
 import {
   libraryScanned,
@@ -161,6 +160,7 @@ import {
   toggleFavoriteArtist,
   fetchLibraryTracksPage,
   fetchLibraryAlbums,
+  fetchLibraryArtists,
   fetchAllLibraryTracks,
   localCoverUrl,
 } from '../stores/library.js'
@@ -186,9 +186,15 @@ const deleteBusy = ref(false)
 let narrowMq = null
 
 const artistFavorited = computed(() => (artist.value ? isFavoriteArtist(artist.value) : false))
-const totalPages = computed(() => Math.max(1, Math.ceil((artist.value?.trackCount || artist.value?.tracks?.length || 0) / pageSize.value)))
+const artistTrackTotal = computed(() => artist.value?.trackCount || 0)
 const listStart = computed(() => (page.value - 1) * pageSize.value)
-const pagedTracks = computed(() => artist.value?.tracks || [])
+const pagedTracks = computed(() => {
+  const tracks = artist.value?.tracks || []
+  const size = Math.max(1, Number(pageSize.value) || 20)
+  if (tracks.length <= size) return tracks
+  const start = (page.value - 1) * size
+  return tracks.slice(start, start + size)
+})
 
 function onToggleArtistFavorite() {
   if (!artist.value) return
@@ -204,23 +210,30 @@ async function loadArtist() {
   }
   loading.value = true
   try {
-    const [tracksRes, albumsRes] = await Promise.all([
+    const [tracksRes, albumsRes, artistsRes] = await Promise.all([
       fetchLibraryTracksPage(api, {
         page: page.value,
         limit: pageSize.value,
         artist: name,
         sort: 'album',
         replace: false,
+        syncNavBadge: false,
       }),
       fetchLibraryAlbums(api, { page: 1, limit: 1, artist: name }),
+      fetchLibraryArtists(api, { page: 1, limit: 20, q: name, sort: 'count' }),
     ])
+    const meta = artistsRes.items.find((a) => a.name === name || a.id === artistId.value)
+      || artistsRes.items[0]
     const cover = tracksRes.items.find((t) => t.picUrl)?.picUrl
       || (tracksRes.items[0]?.filePath ? localCoverUrl(tracksRes.items[0].filePath) : '')
     artist.value = {
       id: artistId.value,
       name,
       cover,
-      trackCount: tracksRes.total,
+      trackCount: Math.max(
+        resolveLoadedTotal(tracksRes.total, page.value, pageSize.value, tracksRes.items.length),
+        Number(meta?.trackCount) || 0,
+      ),
       albumCount: albumsRes.total,
       tracks: tracksRes.items,
     }
@@ -380,31 +393,16 @@ function onAddedToPlaylist({ playlist, duplicate }) {
 
 async function onDeleteSong(song) {
   if (!song || deleteBusy.value) return
-  const filePath = getTrackFilePath(song)
-  if (!filePath) {
-    showToast('未找到该歌曲的本地文件', 'error')
-    return
-  }
-  const ok = await appConfirm({
-    title: '删除歌曲',
-    message: `确定从磁盘永久删除「${song.name}」？`,
-    hint: '文件将被物理删除，此操作不可恢复。',
-    confirmText: '删除',
-    danger: true,
-    cover: song.picUrl || '',
-  })
-  if (!ok) return
   deleteBusy.value = true
   try {
-    const res = await api.library.deleteFiles([filePath])
-    const failed = res?.data?.failed || []
-    if (failed.length) {
-      showToast(failed[0]?.error || '删除失败', 'error')
+    const result = await confirmDeleteLibraryTrack(song)
+    if (result.noPath) {
+      showToast('未找到该歌曲的本地文件', 'error')
       return
     }
+    if (result.cancelled) return
     actionsOpenKey.value = ''
     showToast(`已删除：${song.name}`, 'success')
-    // 当前页仅剩被删曲目且非首页：回退一页（page watcher 会自动重新加载）
     if (artist.value.tracks.length <= 1 && page.value > 1) {
       page.value -= 1
     } else {

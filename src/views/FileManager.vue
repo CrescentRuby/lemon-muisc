@@ -385,7 +385,7 @@
             </button>
           </div>
           <p v-if="!orgRootDirs.length" class="org-picker-empty">
-            暂无已配置的音乐库目录。请先在「设置 → 文件路径」中添加音乐目录。
+            暂无已配置的音乐库目录。请先在「设置 → 文件路径」添加；Docker 请把歌曲挂到 /music 后刷新。
           </p>
           <div v-else-if="orgLoadingDirs" class="org-picker-loading">正在加载目录…</div>
           <div v-else class="org-tree">

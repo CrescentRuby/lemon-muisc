@@ -6,7 +6,7 @@
  */
 import { computed, ref } from 'vue'
 import { addToQueue, enterMoodQueueMode, exitMoodQueueMode, playItem } from './player.js'
-import { localCoverUrl } from './library.js'
+import { localCoverUrl, recordRecentPlay } from './library.js'
 
 /** 喜欢偏好半衰期（毫秒）——约 20 分钟淡一半 */
 export const MOOD_LIKE_HALF_LIFE_MS = 20 * 60 * 1000
@@ -197,7 +197,9 @@ export async function startMoodRadio(point, pointsList) {
   moodRadioFeedback.value = ''
   touchActive()
   rememberPlayed(track.key)
-  await playItem(trackPayload(point), 'local', { mood: true })
+  const payload = trackPayload(point)
+  await playItem(payload, 'local', { mood: true })
+  recordRecentPlay({ ...payload, source: 'local' })
   return true
 }
 
@@ -272,7 +274,9 @@ export async function playMoodRadioNext() {
   moodRadioNow.value = track
   moodRadioFeedback.value = ''
   rememberPlayed(track.key)
-  await playItem(trackPayload(next), 'local', { mood: true })
+  const payload = trackPayload(next)
+  await playItem(payload, 'local', { mood: true })
+  recordRecentPlay({ ...payload, source: 'local' })
   return true
 }
 

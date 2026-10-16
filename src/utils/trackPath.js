@@ -20,6 +20,7 @@ export function isSameTrackPath(a, b) {
 }
 
 export function isLocalTrack(item, source = '') {
+  if (item?.source === 'podcast' || source === 'podcast' || item?.podcastEpisodeId) return false
   if (getTrackFilePath(item)) return true
   if (source === 'local' || item?.source === 'local') return true
   return false

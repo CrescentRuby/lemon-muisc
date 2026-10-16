@@ -12,6 +12,7 @@ import {
 import { syncLibraryIndex } from './libraryCache.js'
 import { getLibraryScanStatus, startLibraryScanJob } from './libraryScanJob.js'
 import { notifyLibraryRemoved } from './libraryNotify.js'
+import { markLibraryIndexDirty } from './libraryIndexState.js'
 
 let timer = null
 let tickInFlight = false
@@ -32,6 +33,7 @@ async function tick() {
     const removed = syncResult.removed?.length || 0
     if (!pending && !removed) return
 
+    markLibraryIndexDirty()
     if (removed) notifyLibraryRemoved(syncResult.removed)
     startLibraryScanJob({ syncResult, dirs })
   } catch (e) {

@@ -62,6 +62,21 @@ export function isNativeHostMode() {
   return false
 }
 
+function isContainerRuntime() {
+  if (isNativeHostMode()) return false
+  if (fs.existsSync('/.dockerenv')) return true
+  return Boolean(process.env.CONFIG_PATH)
+}
+
+export function markUserPathsConfigured() {
+  try {
+    const root = getConfigRoot()
+    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true })
+    const flag = path.join(root, '.user-paths-configured')
+    if (!fs.existsSync(flag)) fs.writeFileSync(flag, '1\n')
+  } catch {}
+}
+
 function inferMountsFromProc() {
   const result = {}
   try {
@@ -71,9 +86,10 @@ function inferMountsFromProc() {
       const mountPoint = line.slice(0, sep).trim().split(/\s+/).pop()
       if (mountPoint !== DEFAULT_MUSIC_DIR && mountPoint !== DEFAULT_DOWNLOAD_DIR) continue
       const after = line.slice(sep + 3).trim().split(/\s+/)
-      if (after[0] !== 'bind' || !after[1]) continue
+      const source = after[1]
+      if (!source) continue
       const key = mountPoint === DEFAULT_MUSIC_DIR ? 'music' : 'downloads'
-      result[key] = { host: after[1], container: mountPoint }
+      result[key] = { host: source, container: mountPoint }
     }
   } catch {}
   return Object.keys(result).length ? result : null
@@ -110,6 +126,22 @@ function loadMountMap() {
     mounts = mounts || {}
     if (!mounts.music && inferred.music) mounts.music = inferred.music
     if (!mounts.downloads && inferred.downloads) mounts.downloads = inferred.downloads
+  }
+
+  if (!isNativeHostMode()) {
+    mounts = mounts || {}
+    if (!mounts.music && fs.existsSync(DEFAULT_MUSIC_DIR)) {
+      mounts.music = {
+        host: musicHost || DEFAULT_MUSIC_DIR,
+        container: DEFAULT_MUSIC_DIR,
+      }
+    }
+    if (!mounts.downloads && fs.existsSync(DEFAULT_DOWNLOAD_DIR)) {
+      mounts.downloads = {
+        host: downloadsHost || DEFAULT_DOWNLOAD_DIR,
+        container: DEFAULT_DOWNLOAD_DIR,
+      }
+    }
   }
 
   return mounts && (mounts.music || mounts.downloads) ? mounts : null
@@ -236,7 +268,11 @@ function setPersonalMusicPaths(userId, paths) {
 export function getMusicPathsForUser(userId) {
   if (!userId) return getSharedMusicPaths()
   const mode = getEffectivePathsMode(userId)
-  if (mode === 'personal') return getPersonalMusicPaths(userId)
+  if (mode === 'personal') {
+    const personal = getPersonalMusicPaths(userId)
+    if (personal.length) return personal
+    return getSharedMusicPaths()
+  }
   return getSharedMusicPaths()
 }
 
@@ -285,6 +321,7 @@ function setMusicPaths(paths) {
   setSetting(MUSIC_PATHS_KEY, JSON.stringify(unique))
   syncTagDirs(unique)
   syncLegacyFilePathsUnion()
+  if (unique.length) markUserPathsConfigured()
   return unique
 }
 
@@ -421,6 +458,10 @@ export function setPathsAccessPolicy(userId, policy) {
   }
 
   setUserSettings(userId, entries)
+  if (pathPolicy === 'personal' && !getPersonalMusicPaths(userId).length) {
+    const shared = getSharedMusicPaths()
+    if (shared.length) setPersonalMusicPaths(userId, shared)
+  }
   return getPathsAccessInfo(userId)
 }
 
@@ -564,6 +605,10 @@ export function setPathsMode(userId, mode = 'shared') {
     }
   }
   setUserSettings(userId, entries)
+  if (usePersonal && !getPersonalMusicPaths(userId).length) {
+    const shared = getSharedMusicPaths()
+    if (shared.length) setPersonalMusicPaths(userId, shared)
+  }
   return getPathsAccessInfo(userId)
 }
 
@@ -723,6 +768,7 @@ export function setDownloadSavePath(dirPath, { fromPicker = false } = {}) {
   const p = validateDirectoryPath(dirPath, { fromPicker })
   setSetting(DOWNLOAD_PATH_KEY, p)
   syncLegacyFilePathsUnion()
+  markUserPathsConfigured()
   return p
 }
 
@@ -819,6 +865,9 @@ export function migrateFilePaths(defaultMusicPath = DEFAULT_MUSIC_DIR) {
     getDownloadSavePath()
   }
   syncLegacyFilePathsUnion()
+  if (getMusicPaths().length || (!isNativeHostMode() && fs.existsSync(DEFAULT_MUSIC_DIR))) {
+    markUserPathsConfigured()
+  }
 }
 
 export function addMusicPath(dirPath, { fromPicker = false } = {}) {
@@ -951,13 +1000,14 @@ function isAuthorizedPath(dirPath) {
   return authorized.some(root => dirPath === root || dirPath.startsWith(`${root}/`))
 }
 
-/** 首次使用：尚未在飞牛应用设置中保存 NAS 数据目录 */
+/** 首次使用：尚未配置可用的音乐库目录 */
 export function getSetupStatus() {
   const configRoot = getConfigRoot()
-  const userConfigured = fs.existsSync(path.join(configRoot, '.user-paths-configured'))
+  const flagConfigured = fs.existsSync(path.join(configRoot, '.user-paths-configured'))
   const paths = getMusicPaths()
   const readablePaths = paths.filter((p) => fs.existsSync(p))
   const native = isNativeHostMode()
+  const isContainer = isContainerRuntime()
   const musicPath = native
     ? (process.env.MUSIC_HOST_PATH || process.env.DOWNLOAD_PATH || '')
     : DEFAULT_MUSIC_DIR
@@ -966,15 +1016,18 @@ export function getSetupStatus() {
     : DEFAULT_DOWNLOAD_DIR
   const musicProbe = musicPath && fs.existsSync(musicPath) ? probeDir(musicPath) : null
   const downloadsProbe = downloadsPath && fs.existsSync(downloadsPath) ? probeDir(downloadsPath) : null
+  const musicMounted = Boolean(musicProbe?.exists)
+  const dockerReady = isContainer && (musicMounted || readablePaths.length > 0)
+  const userConfigured = flagConfigured || dockerReady || readablePaths.length > 0
   return {
     needsPathConfig: !userConfigured,
     userPathsConfigured: userConfigured,
-    musicMounted: Boolean(musicProbe?.exists),
+    musicMounted,
     downloadsMounted: Boolean(downloadsProbe?.exists),
     filePathsConfigured: readablePaths.length > 0,
     readablePaths,
     mountInfo: getMountInfo(),
-    isContainer: !native && Boolean(process.env.CONFIG_PATH),
+    isContainer,
     native,
     musicProbe,
     downloadsProbe,

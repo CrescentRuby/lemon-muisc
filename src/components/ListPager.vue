@@ -3,7 +3,7 @@
     <AppSelect
       v-if="showSize"
       class="list-pager-size"
-      :model-value="pageSize"
+      :model-value="resolvedPageSize"
       :options="sizeOptions"
       size="sm"
       min-width="7.5rem"
@@ -50,14 +50,20 @@
 <script setup>
 import { computed } from 'vue'
 import AppSelect from './AppSelect.vue'
-import { listPageSizeSelectOptions, LIST_PAGE_SIZE_OPTIONS } from '../composables/useListPageSize.js'
+import {
+  listPageSizeSelectOptions,
+  LIST_PAGE_SIZE_OPTIONS,
+  LIST_PAGE_SIZE_DEFAULT,
+  toListCount,
+  countListPages,
+} from '../composables/useListPageSize.js'
 
 const props = defineProps({
-  page: { type: Number, default: 1 },
-  pageSize: { type: Number, default: 20 },
+  page: { type: [Number, String], default: 1 },
+  pageSize: { type: [Number, String], default: 20 },
   /** 总条数（优先）；也可只传 totalPages */
-  total: { type: Number, default: 0 },
-  totalPages: { type: Number, default: 0 },
+  total: { type: [Number, String], default: 0 },
+  totalPages: { type: [Number, String], default: 0 },
   /** 总条数不超过最小档且仅一页时是否仍显示（便于改每页条数） */
   alwaysShowSize: { type: Boolean, default: false },
   /** 远程接口不支持改条数时设为 false，仅保留翻页 */
@@ -71,11 +77,15 @@ const props = defineProps({
 
 const emit = defineEmits(['update:page', 'update:pageSize', 'change-page', 'change-page-size'])
 
-const resolvedTotalPages = computed(() => {
-  if (props.totalPages > 0) return Math.max(1, props.totalPages)
-  const size = Math.max(1, Number(props.pageSize) || 1)
-  return Math.max(1, Math.ceil(Math.max(0, props.total) / size))
-})
+const resolvedPageSize = computed(() =>
+  Math.max(1, toListCount(props.pageSize, LIST_PAGE_SIZE_DEFAULT) || LIST_PAGE_SIZE_DEFAULT),
+)
+
+const resolvedTotal = computed(() => toListCount(props.total, 0))
+
+const resolvedTotalPages = computed(() =>
+  countListPages(resolvedTotal.value, resolvedPageSize.value, props.totalPages),
+)
 
 const minSize = computed(() => {
   const vals = (props.sizeOptions || [])
@@ -85,7 +95,7 @@ const minSize = computed(() => {
 })
 
 const show = computed(() => {
-  const total = Math.max(0, Number(props.total) || 0)
+  const total = resolvedTotal.value
   const pages = resolvedTotalPages.value
   if (pages > 1) return true
   if (!props.showSize) return false

@@ -48,6 +48,7 @@ import { buildSourceFallbackOffer } from '../utils/sourceFallback.js'
 import { extractMusicUrl } from '../utils/sourceResult.js'
 import { notifyLibraryChanged, notifyLibraryRemoved } from '../utils/libraryNotify.js'
 import { scanBatchAndCache, removeCachePaths } from '../utils/libraryCache.js'
+import { bumpLibraryIndexRevision } from '../utils/libraryIndexState.js'
 import { resolveDownloadGroupDir, resolveDownloadGroupMode } from '../utils/downloadPath.js'
 import { isPlaceholderName } from '../utils/filenameParse.js'
 import {
@@ -1965,7 +1966,9 @@ async function downloadTask(task, settings, abortSignal = null) {
             getDB().prepare("UPDATE download_tasks SET status = 'completed', file_path = ?, progress = 1, error = NULL WHERE id = ?")
               .run(filePath, task.id)
             dlBroadcast('download:status', { id: task.id, status: 'completed', progress: 1, filePath, quality, source })
-            scanBatchAndCache([{ filePath }]).catch(() => {})
+            scanBatchAndCache([{ filePath }]).then((rows) => {
+              if (rows?.length) bumpLibraryIndexRevision()
+            }).catch(() => {})
             notifyLibraryChanged([filePath], { reason: 'download' })
             try {
               const { scheduleMoodAutoAnalyze } = await import('../utils/moodAnalyzeJob.js')

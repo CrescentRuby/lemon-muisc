@@ -16,6 +16,8 @@ import { libraryRouter } from './library.js'
 import { albumSyncRouter } from './albumSync.js'
 import { qualityUpgradeRouter } from './qualityUpgrade.js'
 import { backupRouter } from './backup.js'
+import { podcastRouter } from './podcast.js'
+import { dlnaRouter } from './dlna.js'
 import { openApiPublicRouter } from './openApi.js'
 import { requireAuth } from '../middleware/auth.js'
 
@@ -43,4 +45,6 @@ apiRouter.use('/about', aboutRouter)
 apiRouter.use('/library/album-sync', albumSyncRouter)
 apiRouter.use('/library/quality-upgrade', qualityUpgradeRouter)
 apiRouter.use('/library', libraryRouter)
+apiRouter.use('/podcasts', podcastRouter)
+apiRouter.use('/dlna', dlnaRouter)
 apiRouter.use('/backup', backupRouter)

@@ -358,6 +358,25 @@ export const api = {
     rejectSource: (id) => request(`/download/reject-source/${id}`, { method: 'POST' }),
     clearCompleted: () => request('/download/clear-completed', { method: 'POST' }),
   },
+  podcasts: {
+    list: () => request('/podcasts'),
+    subscribe: (url) => request('/podcasts', { method: 'POST', body: { url }, timeout: 45000 }),
+    get: (id) => request(`/podcasts/${encodeURIComponent(id)}`),
+    episodes: (id, params = {}) => {
+      const q = new URLSearchParams()
+      if (params.page) q.set('page', String(params.page))
+      if (params.limit) q.set('limit', String(params.limit))
+      const qs = q.toString()
+      return request(`/podcasts/${encodeURIComponent(id)}/episodes${qs ? `?${qs}` : ''}`)
+    },
+    refresh: (id) => request(`/podcasts/${encodeURIComponent(id)}/refresh`, { method: 'POST', timeout: 45000 }),
+    unsubscribe: (id) => request(`/podcasts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  dlna: {
+    devices: (refresh = false) => request(`/dlna/devices${refresh ? '?refresh=1' : ''}`, { timeout: 15000 }),
+    play: (body) => request('/dlna/play', { method: 'POST', body, timeout: 20000 }),
+    stop: (udn) => request('/dlna/stop', { method: 'POST', body: { udn } }),
+  },
   play: {
     getUrl: (payload, options = {}) => {
       const body = typeof payload === 'object' && payload !== null
@@ -464,6 +483,8 @@ export const api = {
       return request(`/library/genres${qs ? `?${qs}` : ''}`, { timeout: 60000 })
     },
     sync: () => request('/library/sync', { method: 'POST', timeout: 120000 }),
+    /** 曲库版本信号：updated 0=无更新用本地，1=有新文件再拉索引 */
+    syncState: () => request('/library/sync-state'),
     scanStart: (force = false, { dirs = null, scanAll = false } = {}) => request('/library/scan-start', {
       method: 'POST',
       body: {
