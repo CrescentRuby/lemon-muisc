@@ -202,15 +202,24 @@ npm start
 
 ### Docker 快速启动
 
-拉镜像部署，不必 clone、不必 `--build`。完整说明见 [docs/docker.md](docs/docker.md)。
+拉镜像部署，不必 clone、不必 `--build`。把下面保存为 `docker-compose.yml` 后执行 `docker compose up -d`。完整说明见 [docs/docker.md](docs/docker.md)。
 
-```bash
-mkdir -p lemon-music/data/{music,downloads,config}
-cd lemon-music
-curl -fsSL -o docker-compose.yml \
-  https://raw.githubusercontent.com/jia070310/lemon-muisc/main/docker-compose.yml
-docker compose up -d
-# http://服务器IP:7983
+```yaml
+services:
+  lemon-music:
+    image: ghcr.io/jia070310/lemon-muisc:latest
+    container_name: lemon-music
+    ports:
+      - "7983:7983"
+    restart: unless-stopped
+    environment:
+      PORT: "7983"
+      DOWNLOAD_PATH: /downloads
+      CONFIG_PATH: /config
+    volumes:
+      - ./data/music:/music
+      - ./data/downloads:/downloads
+      - ./data/config:/config
 ```
 
 或：

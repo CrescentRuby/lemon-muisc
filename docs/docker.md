@@ -12,20 +12,35 @@
 
 ## 方式一：docker-compose.yml（推荐）
 
-只要这一份 compose 文件：
+把下面内容保存为 `docker-compose.yml`。群晖 / 飞牛 Docker / 其它面板：新建项目，直接粘贴这段 YAML。需要改目录时，把 `./data/...` 换成共享文件夹（如 `/volume1/music:/music`）。
 
-```bash
-mkdir -p lemon-music/data/{music,downloads,config}
-cd lemon-music
-curl -fsSL -o docker-compose.yml \
-  https://raw.githubusercontent.com/jia070310/lemon-muisc/main/docker-compose.yml
-
-docker compose up -d
+```yaml
+services:
+  lemon-music:
+    image: ghcr.io/jia070310/lemon-muisc:latest
+    container_name: lemon-music
+    ports:
+      - "7983:7983"
+    restart: unless-stopped
+    environment:
+      PORT: "7983"
+      DOWNLOAD_PATH: /downloads
+      CONFIG_PATH: /config
+      # 可选：界面展示用的宿主机路径
+      # MUSIC_HOST_PATH: /volume1/music
+      # DOWNLOADS_HOST_PATH: /volume1/downloads
+      # DLNA 投屏：LEMON_PUBLIC_URL: http://192.168.1.8:7983
+    volumes:
+      - ./data/music:/music
+      - ./data/downloads:/downloads
+      - ./data/config:/config
 ```
 
-没有 `curl` 时：从仓库复制 [`docker-compose.yml`](https://github.com/jia070310/lemon-muisc/blob/main/docker-compose.yml) 到空目录，执行 `docker compose up -d`。
+然后在该文件所在目录执行：
 
-群晖 / 飞牛 Docker / 其它面板：新建项目，把该 YAML 贴进去，把 `./data/...` 改成你的共享文件夹（如 `/volume1/music:/music`）。
+```bash
+docker compose up -d
+```
 
 浏览器打开：`http://服务器IP:7983`
 
