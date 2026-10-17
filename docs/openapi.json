@@ -1864,7 +1864,7 @@
         "tags": [
           "source"
         ],
-        "summary": "导出音源脚本",
+        "summary": "导出音源脚本（写入下载目录「音源导出」文件夹，并返回脚本内容）",
         "description": "需要管理员权限 (admin)",
         "security": [
           {

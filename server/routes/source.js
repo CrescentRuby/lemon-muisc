@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { Router } from 'express'
 import multer from 'multer'
 import { getDB } from '../db.js'
@@ -31,6 +33,7 @@ import { parseScriptMeta, metaToDbFields, scriptUpdateUrl } from '../utils/parse
 import { fetchSourceScriptFromUrl } from '../utils/fetchSourceScript.js'
 import { compareVersion } from '../utils/version.js'
 import { requireAdmin } from '../middleware/auth.js'
+import { getDownloadPathInfo, getMusicPathsForUser, isNativeHostMode } from '../utils/filePaths.js'
 import {
   getAutoClosedPlatformsPublic,
   dismissAutoClosedPlatforms,
@@ -347,20 +350,85 @@ function safeSourceFilename(name, id) {
   return `${base || 'source'}${suffix ? `-${suffix}` : ''}.js`
 }
 
+function isDockerStubPath(dir) {
+  const p = String(dir || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  return p === '/downloads' || p === '/music' || p === '/data'
+}
+
+function collectSourceExportRoots(userId) {
+  const info = getDownloadPathInfo(userId) || {}
+  const native = isNativeHostMode()
+  const raw = [
+    info.savePath,
+    info.sharedPath,
+    info.personalPath,
+    process.env.DOWNLOADS_HOST_PATH,
+    process.env.DOWNLOAD_PATH,
+    ...getMusicPathsForUser(userId || null),
+    process.env.MUSIC_HOST_PATH,
+  ]
+  const seen = new Set()
+  const roots = []
+  for (const item of raw) {
+    const dir = String(item || '').trim()
+    if (!dir) continue
+    if (native && isDockerStubPath(dir)) continue
+    let key = dir
+    try { key = path.resolve(dir) } catch {}
+    if (seen.has(key)) continue
+    seen.add(key)
+    roots.push(dir)
+  }
+  return roots
+}
+
+function saveSourceExportToDownloadDir(userId, filename, script) {
+  const roots = collectSourceExportRoots(userId)
+  const errors = []
+  for (const root of roots) {
+    try {
+      const outDir = path.join(root, '音源导出')
+      fs.mkdirSync(outDir, { recursive: true })
+      const filePath = path.join(outDir, filename)
+      fs.writeFileSync(filePath, script, 'utf8')
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).size < 1) {
+        throw new Error('写入后文件不存在')
+      }
+      return { savedDir: outDir, savedPath: filePath }
+    } catch (e) {
+      errors.push(`${root}（${e.message || e}）`)
+    }
+  }
+  const err = new Error(
+    roots.length
+      ? `无法写入 NAS 目录，已尝试：${errors.join('；')}。请到设置 → 文件路径确认下载/音乐库目录可写。`
+      : '未配置下载或音乐库目录，请先在设置 → 文件路径里指定',
+  )
+  err.code = 'NO_DOWNLOAD_DIR'
+  throw err
+}
+
 sourceRouter.get('/:id/export', requireAdmin, (req, res) => {
   try {
     const row = getDB().prepare('SELECT id, name, version, script FROM user_apis WHERE id = ?').get(req.params.id)
     if (!row) return res.status(404).json({ error: '音源不存在' })
     const script = String(row.script || '')
     if (!script.trim()) return res.status(404).json({ error: '该音源没有可导出的脚本' })
-    res.json({
+    const filename = safeSourceFilename(row.name, row.id)
+    const payload = {
       ok: true,
       id: row.id,
       name: row.name,
       version: row.version || '',
-      filename: safeSourceFilename(row.name, row.id),
+      filename,
       script,
-    })
+    }
+    try {
+      Object.assign(payload, saveSourceExportToDownloadDir(req.user?.id, filename, script))
+    } catch (e) {
+      payload.saveError = e.message || '未能写入下载目录'
+    }
+    res.json(payload)
   } catch (e) {
     res.status(500).json({ error: e.message || '导出失败' })
   }

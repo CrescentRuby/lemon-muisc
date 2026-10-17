@@ -772,6 +772,7 @@
                   v-if="isAdminUser"
                   class="btn-sm btn-ghost"
                   type="button"
+                  title="保存到下载目录下的「音源导出」文件夹"
                   :disabled="sourceBusyId === s.id || exportingSourceId === s.id"
                   @click="exportSource(s)"
                 >{{ exportingSourceId === s.id ? '导出中…' : '导出' }}</button>
@@ -1421,7 +1422,7 @@ import { reloadDiscoverSources } from '../stores/discover.js'
 import { applySourceFallbackMode, SOURCE_FALLBACK_MODE_KEY } from '../stores/sourceFallback.js'
 import { isAdmin as isAdminUser, currentUser as currentAuthUser, patchLocalUser } from '../utils/auth.js'
 import { canPickFolder, pickFolder } from '../utils/fnos.js'
-import { appPrompt } from '../stores/appDialog.js'
+import { appAlert, appPrompt } from '../stores/appDialog.js'
 import { applyTheme, theme as currentTheme, THEME_KEY, COLOR_SCHEME_KEY, CUSTOM_COLOR_KEY, COLOR_SCHEME_OPTIONS, applyColorScheme, setCustomColor, normalizeHex, colorScheme as currentColorScheme, customColor as currentCustomColor } from '../utils/theme.js'
 import {
   LYRIC_COLOR_PRESETS,
@@ -3649,16 +3650,6 @@ async function deactivateSource(id) {
   }
 }
 
-function downloadTextFile(filename, text) {
-  const blob = new Blob([text], { type: 'text/javascript;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename || 'source.js'
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 async function exportSource(source) {
   const id = source?.id
   if (!id || exportingSourceId.value) return
@@ -3667,8 +3658,16 @@ async function exportSource(source) {
     const res = await api.source.exportScript(id)
     const script = String(res?.script || '')
     if (!script.trim()) throw new Error('该音源没有可导出的脚本')
-    downloadTextFile(res.filename || `${source.name || 'source'}.js`, script)
-    showToast('已导出音源脚本', 'success')
+    if (!res.savedPath) {
+      throw new Error(res.saveError || '未能保存到 NAS 目录，请检查设置里的下载路径')
+    }
+    showToast(`已保存到 ${res.savedPath}`, 'success')
+    await appAlert({
+      title: '音源已导出',
+      message: res.savedPath,
+      hint: '请到飞牛「文件管理」打开该路径。目录名是「音源导出」。',
+      confirmText: '知道了',
+    })
   } catch (e) {
     showToast(e.message || '导出失败', 'error')
   } finally {

@@ -169,7 +169,7 @@ add('/source/update/{id}', 'post', '更新指定音源脚本', {
     },
   },
 })
-add('/source/{id}/export', 'get', '导出音源脚本', { tag: 'source', admin: true, parameters: [p('id', '音源 ID')] })
+add('/source/{id}/export', 'get', '导出音源脚本（写入下载目录「音源导出」文件夹，并返回脚本内容）', { tag: 'source', admin: true, parameters: [p('id', '音源 ID')] })
 add('/source/{id}', 'delete', '删除音源', { tag: 'source', admin: true, parameters: [p('id', '音源 ID')] })
 add('/source/fault', 'get', '音源故障信息', { tag: 'source' })
 add('/source/fault/dismiss', 'post', '忽略故障提示', { tag: 'source' })
