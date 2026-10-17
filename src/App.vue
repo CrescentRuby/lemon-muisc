@@ -19,23 +19,45 @@
         <p class="nav-label">主导航</p>
         <span class="nav-divider" aria-hidden="true"></span>
         <div class="nav-group">
-          <router-link to="/search" class="nav-item" active-class="active">
+          <router-link
+            to="/search"
+            class="nav-item"
+            active-class="active"
+            :class="{ pending: navPending('/search') }"
+            @click="onNavIntent('/search')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <span class="nav-item-text">搜索</span>
             <span class="nav-tooltip">搜索</span>
           </router-link>
-          <router-link to="/discover" class="nav-item" :class="{ active: isDiscoverNav }">
+          <router-link
+            to="/discover"
+            class="nav-item"
+            :class="{ active: isDiscoverNav, pending: navPending('/discover') }"
+            @click="onNavIntent('/discover')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             <span class="nav-item-text">发现</span>
             <span class="nav-tooltip">发现</span>
           </router-link>
-          <router-link to="/library" class="nav-item" :class="{ active: isLibraryNav }">
+          <router-link
+            to="/library"
+            class="nav-item"
+            :class="{ active: isLibraryNav, pending: navPending('/library') }"
+            @click="onNavIntent('/library')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
             <span class="nav-item-text">音乐库</span>
             <span v-if="libraryTrackTotal > 0" class="nav-badge">{{ libraryTrackTotal }}</span>
             <span class="nav-tooltip">音乐库</span>
           </router-link>
-          <router-link to="/library/mood" class="nav-item" active-class="active">
+          <router-link
+            to="/library/mood"
+            class="nav-item"
+            active-class="active"
+            :class="{ pending: navPending('/library/mood') }"
+            @click="onNavIntent('/library/mood')"
+          >
             <svg class="mood-map-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="#E53935" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
               <path fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M4.8 12h3.2l1.35-3.3 2.15 6.6 1.4-3.3h6.3"/>
@@ -47,24 +69,48 @@
         <p class="nav-label nav-label-gap">工具与设置</p>
         <span class="nav-divider nav-divider-gap" aria-hidden="true"></span>
         <div class="nav-group">
-          <router-link to="/download" class="nav-item" active-class="active" :title="downloadNavTitle">
+          <router-link
+            to="/download"
+            class="nav-item"
+            active-class="active"
+            :class="{ pending: navPending('/download') }"
+            :title="downloadNavTitle"
+            @click="onNavIntent('/download')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span class="nav-item-text">下载</span>
             <span v-if="activeDownloadBadgeText" class="nav-badge nav-badge-download">{{ activeDownloadBadgeText }}</span>
             <span v-if="activeDownloadBadgeText" class="nav-download-dot" aria-hidden="true">{{ activeDownloadBadgeText }}</span>
             <span class="nav-tooltip">{{ downloadNavTitle }}</span>
           </router-link>
-          <router-link to="/file-manager" class="nav-item" :class="{ active: isFileManagerNav }">
+          <router-link
+            to="/file-manager"
+            class="nav-item"
+            :class="{ active: isFileManagerNav, pending: navPending('/file-manager') }"
+            @click="onNavIntent('/file-manager')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/></svg>
             <span class="nav-item-text">文件管理</span>
             <span class="nav-tooltip">文件管理</span>
           </router-link>
-          <router-link to="/settings" class="nav-item" active-class="active">
+          <router-link
+            to="/settings"
+            class="nav-item"
+            active-class="active"
+            :class="{ pending: navPending('/settings') }"
+            @click="onNavIntent('/settings')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0 1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             <span class="nav-item-text">设置</span>
             <span class="nav-tooltip">设置</span>
           </router-link>
-          <router-link to="/about" class="nav-item" active-class="active">
+          <router-link
+            to="/about"
+            class="nav-item"
+            active-class="active"
+            :class="{ pending: navPending('/about') }"
+            @click="onNavIntent('/about')"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             <span class="nav-item-text">关于</span>
             <span v-if="hasUpdate" class="nav-update-dot" title="有新版本"></span>
@@ -384,22 +430,45 @@
     </div>
 
     <nav v-if="!showFullscreenPlayer" class="mobile-tabbar" aria-label="主导航">
-      <router-link to="/search" class="tab-item" active-class="active" @touchstart.passive="onTabPrefetch('/search')" @mousedown="onTabPrefetch('/search')">
+      <router-link
+        to="/search"
+        class="tab-item"
+        active-class="active"
+        :class="{ pending: navPending('/search') }"
+        @click="onNavIntent('/search')"
+        @touchstart.passive="onTabPrefetch('/search')"
+        @mousedown="onTabPrefetch('/search')"
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <span>搜索</span>
       </router-link>
-      <router-link to="/discover" class="tab-item" :class="{ active: isDiscoverNav }" @touchstart.passive="onTabPrefetch('/discover')" @mousedown="onTabPrefetch('/discover')">
+      <router-link
+        to="/discover"
+        class="tab-item"
+        :class="{ active: isDiscoverNav, pending: navPending('/discover') }"
+        @click="onNavIntent('/discover')"
+        @touchstart.passive="onTabPrefetch('/discover')"
+        @mousedown="onTabPrefetch('/discover')"
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
         <span>发现</span>
       </router-link>
-      <router-link to="/library" class="tab-item" :class="{ active: isLibraryNav }" @touchstart.passive="onTabPrefetch('/library')" @mousedown="onTabPrefetch('/library')">
+      <router-link
+        to="/library"
+        class="tab-item"
+        :class="{ active: isLibraryNav, pending: navPending('/library') }"
+        @click="onNavIntent('/library')"
+        @touchstart.passive="onTabPrefetch('/library')"
+        @mousedown="onTabPrefetch('/library')"
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
         <span>音乐库</span>
       </router-link>
       <router-link
         to="/library/mood"
         class="tab-item"
-        :class="{ active: isMoodPage }"
+        :class="{ active: isMoodPage, pending: navPending('/library/mood') }"
+        @click="onNavIntent('/library/mood')"
         @touchstart.passive="onTabPrefetch('/library/mood')"
         @mousedown="onTabPrefetch('/library/mood')"
       >
@@ -413,7 +482,9 @@
         to="/download"
         class="tab-item"
         active-class="active"
+        :class="{ pending: navPending('/download') }"
         :title="downloadNavTitle"
+        @click="onNavIntent('/download')"
         @touchstart.passive="onTabPrefetch('/download')"
         @mousedown="onTabPrefetch('/download')"
       >
@@ -457,7 +528,7 @@
             class="mobile-more-item"
             :class="{ active: isFileManagerNav }"
             role="menuitem"
-            @click="closeMobileMore"
+            @click="onNavIntent('/file-manager'); closeMobileMore()"
             @touchstart.passive="onTabPrefetch('/file-manager')"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/></svg>
@@ -468,7 +539,7 @@
             class="mobile-more-item"
             active-class="active"
             role="menuitem"
-            @click="closeMobileMore"
+            @click="onNavIntent('/settings'); closeMobileMore()"
             @touchstart.passive="onTabPrefetch('/settings')"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -479,7 +550,7 @@
             class="mobile-more-item"
             active-class="active"
             role="menuitem"
-            @click="closeMobileMore"
+            @click="onNavIntent('/about'); closeMobileMore()"
             @touchstart.passive="onTabPrefetch('/about')"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -551,7 +622,7 @@ import {
   playlistPickTarget, stopPlaylistPick,
   initLibraryHotReload, initLibraryUserData, resetLibraryUserData, libraryHotNotice, clearLibraryHotNotice,
   loadLibrarySongColumns, loadLibraryHotUpdateSetting, libraryTrackTotal,
-  refreshLibraryTrackTotal,
+  refreshLibraryTrackTotal, hydrateLibrarySnapshot,
 } from './stores/library.js'
 import {
   tagMatchRunning, tagMatchProgress, tagMatchResult, clearTagMatchResult,
@@ -584,7 +655,7 @@ import {
 } from './stores/downloadGuard.js'
 import {
   isRouteLoading, pendingRoutePage, MAIN_TAB_NAMES,
-  prefetchRoute,
+  prefetchRoute, startRouteLoading,
 } from './stores/navigation.js'
 import {
   activeDownloadCount,
@@ -592,7 +663,6 @@ import {
   initDownloadBadge,
   disposeDownloadBadge,
 } from './stores/downloadBadge.js'
-import { isMobileUiContext } from './utils/device.js'
 import { APP_ICON_URL } from './utils/appIcon.js'
 
 const route = useRoute()
@@ -641,9 +711,10 @@ const downloadNavTitle = computed(() => (
     ? `下载（进行中 ${activeDownloadCount.value}）`
     : '下载'
 ))
-const showRouteSkeleton = computed(() => isRouteLoading.value && isMobileUiContext(768))
+const showRouteSkeleton = computed(() => isRouteLoading.value)
 const showMobileMore = ref(false)
 const mobileMoreRef = ref(null)
+const pendingNavPath = ref('')
 
 function closeMobileMore() {
   showMobileMore.value = false
@@ -667,16 +738,44 @@ function isLibraryBrowsePath(path) {
 watch(() => route.fullPath, (to) => {
   closeMobileMore()
   const toPath = String(to || '').split('?')[0]
+  if (pendingNavPath.value && pendingNavPath.value === toPath) pendingNavPath.value = ''
   // 返回音乐库首页时恢复全库实时总数（歌手/专辑页内角标为栏目歌曲数）
   if (isLibraryBrowsePath(toPath)) {
     refreshLibraryTrackTotal(api).catch(() => {})
   }
 })
 
+watch(isRouteLoading, (busy) => {
+  if (!busy) pendingNavPath.value = ''
+})
+
+function navPending(path) {
+  if (!isRouteLoading.value) return false
+  const dest = String(path || '').split('?')[0]
+  const cur = String(route.path || '').split('?')[0]
+  if (!dest || dest === cur) return false
+  if (pendingNavPath.value) return pendingNavPath.value === dest
+  return pendingRoutePage.value === dest.replace(/^\//, '').split('/')[0]
+}
+
+function onNavIntent(path) {
+  prefetchRoute(path)
+  const dest = String(path || '').split('?')[0]
+  const cur = String(route.path || '').split('?')[0]
+  if (dest === cur) return
+  pendingNavPath.value = dest
+  startRouteLoading(path)
+  if (dest === '/library' || dest.startsWith('/library/')) {
+    try { hydrateLibrarySnapshot() } catch {}
+  }
+}
+
 function onTabPrefetch(path) {
   if (route.path === path) return
-  // 只预拉 chunk，勿在此打开骨架：touchstart 后若未真正导航会一直卡在刷新态
   prefetchRoute(path)
+  if (path === '/library' || String(path).startsWith('/library/')) {
+    try { hydrateLibrarySnapshot() } catch {}
+  }
 }
 
 const hasAppNotices = computed(() => Boolean(
@@ -1497,19 +1596,22 @@ onUnmounted(() => {
   padding: 0 12px;
   border-radius: 12px;
   color: var(--text-secondary);
-  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.12s ease;
   position: relative;
   font-size: 13.5px;
   white-space: nowrap;
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text); }
-.nav-item.active {
+.nav-item:active { transform: scale(0.98); }
+.nav-item.active,
+.nav-item.pending {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--text);
   font-weight: 500;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
-.nav-item.active svg:not(.mood-map-icon) { color: var(--accent); }
+.nav-item.active svg:not(.mood-map-icon),
+.nav-item.pending svg:not(.mood-map-icon) { color: var(--accent); }
 .nav-item svg { width: 19px; height: 19px; flex-shrink: 0; }
 .nav-item .mood-map-icon { opacity: 1; }
 .nav-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1740,7 +1842,7 @@ onUnmounted(() => {
   z-index: 40;
   overflow: auto;
   background: var(--bg, var(--bg-page, #121212));
-  pointer-events: none;
+  pointer-events: auto;
 }
 @keyframes route-bar-slide {
   0% { transform: translateX(-100%); opacity: 0.4; }
@@ -2017,7 +2119,8 @@ onUnmounted(() => {
   .tab-item.active .mood-map-icon {
     opacity: 1;
   }
-  .tab-item.active {
+  .tab-item.active,
+  .tab-item.pending {
     color: var(--accent);
   }
   .tab-dot {

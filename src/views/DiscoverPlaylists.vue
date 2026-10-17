@@ -103,7 +103,16 @@ function goBack() {
 function openPlaylist(item) {
   discoverState.activeSource = item.source || source.value
   discoverState.url = item.id
-  discoverState.viewMode = 'recommend'
+  discoverState.viewMode = 'detail'
+  discoverState.loading = true
+  discoverState.results = []
+  discoverState.fetched = true
+  discoverState.playlistInfo = {
+    name: item.name,
+    author: item.author || item.creator || item.userName || '',
+    img: item.img || item.picUrl || item.cover || '',
+    desc: item.desc || '',
+  }
   router.push({ path: '/discover', query: { openPlaylist: item.id, source: discoverState.activeSource } })
 }
 

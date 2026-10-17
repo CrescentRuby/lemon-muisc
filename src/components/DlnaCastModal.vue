@@ -7,7 +7,7 @@
           {{ loading ? '搜索中…' : '重新搜索' }}
         </button>
         <button
-          v-if="castingUdn"
+          v-if="dlnaCastingUdn"
           class="btn-ghost btn-sm"
           type="button"
           @click="stopCast"
@@ -26,12 +26,12 @@
         :key="d.udn"
         type="button"
         class="queue-item dev-row"
-        :class="{ active: castingUdn === d.udn }"
+        :class="{ active: dlnaCastingUdn === d.udn }"
         :disabled="playingUdn === d.udn"
         @click="castTo(d)"
       >
         <span class="queue-name">{{ d.name }}</span>
-        <em>{{ playingUdn === d.udn ? '投送中…' : (castingUdn === d.udn ? '投送中' : '投送') }}</em>
+        <em>{{ playingUdn === d.udn ? '投送中…' : (dlnaCastingUdn === d.udn ? '投送中' : '投送') }}</em>
       </button>
     </div>
   </div>
@@ -40,7 +40,16 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { api } from '../api.js'
-import { currentPlaying, currentLocalTrackPath, currentPlayPlatform, currentPlayQuality, getPlayQuality } from '../stores/player.js'
+import {
+  currentPlaying,
+  currentLocalTrackPath,
+  currentPlayPlatform,
+  currentPlayQuality,
+  getPlayQuality,
+  dlnaCastingUdn,
+  setDlnaCasting,
+  stopDlnaCast,
+} from '../stores/player.js'
 import { buildPlayPayload } from '../utils/musicPayload.js'
 import CastIcon from './CastIcon.vue'
 
@@ -54,7 +63,6 @@ const loading = ref(false)
 const error = ref('')
 const hint = ref('')
 const playingUdn = ref('')
-const castingUdn = ref('')
 
 async function search(refresh = false) {
   loading.value = true
@@ -96,8 +104,8 @@ async function castTo(device) {
       singer: t.singer,
       album: t.album || t.albumName,
     })
-    castingUdn.value = device.udn
-    hint.value = `已投送到 ${device.name}`
+    setDlnaCasting(device.udn)
+    hint.value = `已投送到 ${device.name}，本机已暂停`
   } catch (e) {
     error.value = e.message || '投送失败'
   } finally {
@@ -106,11 +114,10 @@ async function castTo(device) {
 }
 
 async function stopCast() {
-  if (!castingUdn.value) return
+  if (!dlnaCastingUdn.value) return
   try {
-    await api.dlna.stop(castingUdn.value)
-    hint.value = '已停止投屏'
-    castingUdn.value = ''
+    await stopDlnaCast()
+    hint.value = '已停止投屏，本机保持暂停'
   } catch (e) {
     error.value = e.message || '停止失败'
   }

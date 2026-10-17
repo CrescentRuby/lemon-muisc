@@ -64,6 +64,8 @@ function logPlayerIssue(level, message, extra = {}) {
 export const currentPlaying = ref(null)
 export const loadingPlay = ref(null)
 export const isPaused = ref(false)
+/** 正在投屏的 DLNA 渲染器 UDN；有值时本机不出声，由服务端推到设备 */
+export const dlnaCastingUdn = ref('')
 /** 点击播放后、真正开始出声前的缓冲阶段 */
 export const isBuffering = ref(false)
 export const currentTime = ref(0)
@@ -1936,6 +1938,59 @@ export const currentLocalTrackPath = computed(() => {
   return getTrackFilePath(entry?.item)
 })
 
+export function pauseLocalPlayback() {
+  try { audio?.pause() } catch {}
+  endPlaybackBuffer()
+  isPaused.value = true
+  syncMediaSessionPlaybackState()
+}
+
+export function setDlnaCasting(udn) {
+  dlnaCastingUdn.value = String(udn || '')
+  if (dlnaCastingUdn.value) pauseLocalPlayback()
+}
+
+export async function stopDlnaCast() {
+  const udn = dlnaCastingUdn.value
+  dlnaCastingUdn.value = ''
+  if (!udn) return
+  try { await api.dlna.stop(udn) } catch {}
+}
+
+export async function pushPlayingToDlna(udn = dlnaCastingUdn.value) {
+  const t = currentPlaying.value
+  if (!t || !udn) return
+  const source = t.podcastEpisodeId || t.source === 'podcast'
+    ? 'podcast'
+    : (currentPlayPlatform.value || t.source || '')
+  const quality = currentPlayQuality.value || getPlayQuality() || '128k'
+  const rawId = String(t.id || t.trackId || '')
+  const localPath = currentLocalTrackPath.value
+  const trackId = localPath && /^[0-9a-f-]{36}$/i.test(rawId) ? rawId : ''
+  const episodeId = t.podcastEpisodeId || (t.source === 'podcast' ? t.id : '')
+  await api.dlna.play({
+    udn,
+    ...buildPlayPayload(t, source, quality),
+    trackId: trackId || undefined,
+    localPath: localPath || undefined,
+    podcastEpisodeId: episodeId || undefined,
+    name: t.name,
+    singer: t.singer,
+    album: t.album || t.albumName,
+  })
+  pauseLocalPlayback()
+}
+
+async function handoffToDlnaIfCasting() {
+  if (!dlnaCastingUdn.value || !currentPlaying.value) return
+  pauseLocalPlayback()
+  try {
+    await pushPlayingToDlna()
+  } catch (e) {
+    showPlayerNotice(e?.message || '投屏同步失败', 4000)
+  }
+}
+
 export const displayDuration = computed(() => {
   if (duration.value && isFinite(duration.value) && duration.value > 0) return duration.value
   return parseIntervalToSeconds(currentPlaying.value?.interval)
@@ -3016,18 +3071,25 @@ async function startPlaybackFromUrl(url, { resumeTime = 0, item, source, isLocal
   }
 
   unlockAudioFromGesture()
-  try {
-    await ensureAudioContextRunning()
-    await audio.play()
-  } catch (playErr) {
-    if (playErr?.name === 'NotAllowedError') {
-      throw new Error('浏览器拦截了自动播放，请再点一次播放')
+  if (dlnaCastingUdn.value) {
+    try { audio.pause() } catch {}
+    endPlaybackBuffer()
+    isPaused.value = true
+    syncMediaSessionPlaybackState()
+  } else {
+    try {
+      await ensureAudioContextRunning()
+      await audio.play()
+    } catch (playErr) {
+      if (playErr?.name === 'NotAllowedError') {
+        throw new Error('浏览器拦截了自动播放，请再点一次播放')
+      }
+      throw playErr
     }
-    throw playErr
+    isPaused.value = false
   }
 
   clearPlaybackError()
-  isPaused.value = false
   applyAudioOutput()
   // blob: 来自预缓存，勿写入短时 URL 缓存（会被 revoke）
   if (!/^(blob:|data:)/i.test(String(url || ''))) {
@@ -3550,7 +3612,7 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
 
     const cleaned = cleanTrackItem(playItem)
     currentPlaying.value = cleaned
-    isPaused.value = false
+    isPaused.value = !dlnaCastingUdn.value
     const recentSnap = { ...cleaned, source: playSource }
     recordRecentPlay(recentSnap)
     beginPlayStatSession(recentSnap)
@@ -3564,6 +3626,7 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
       const { isMoodRadioActive, syncMoodRadioFromPlaying } = await import('./moodRadio.js')
       if (isMoodRadioActive()) syncMoodRadioFromPlaying(currentPlaying.value)
     } catch {}
+    await handoffToDlnaIfCasting()
     return true
   }
 
@@ -3608,7 +3671,7 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
           syncDurationFromAudio()
           applyDurationFallback(item)
           currentPlaying.value = cleanTrackItem(enrichedItem)
-          isPaused.value = false
+          isPaused.value = !dlnaCastingUdn.value
           const recentSnap = { ...currentPlaying.value, source }
           recordRecentPlay(recentSnap)
           beginPlayStatSession(recentSnap)
@@ -3626,6 +3689,7 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
           } else if (forceDirectLocal && wantLocalSmooth && attempt > 0) {
             showPlayerNotice('流畅转码不可用，已改直出原文件', 3500)
           }
+          await handoffToDlnaIfCasting()
           return
         } catch (e) {
           if (e.aborted || intent !== playIntentToken) throw e
@@ -4034,6 +4098,9 @@ export async function playPrev() {
 export async function togglePause() {
   if (!currentPlaying.value) return
   unlockAudioFromGesture()
+  if (dlnaCastingUdn.value && (audio?.paused || isPaused.value)) {
+    await stopDlnaCast()
+  }
 
   // 缓冲中再点：已有媒体则按「暂停」处理；尚未就绪才取消整次加载
   if (isBuffering.value) {

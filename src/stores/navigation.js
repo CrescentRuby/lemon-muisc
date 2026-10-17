@@ -5,7 +5,16 @@ export const pendingRoutePage = ref('default')
 
 /** 防止骨架一直不关（触控预加载后未真正跳转、导航中断等） */
 let safetyTimer = null
+let finishTimer = null
+let loadingToken = 0
+let loadingStartedAt = 0
 const ROUTE_LOADING_SAFETY_MS = 3500
+/** 挡住点穿到新页「返回」的残留点击 */
+const ROUTE_LOADING_MIN_MS = 220
+
+export function getRouteLoadingToken() {
+  return loadingToken
+}
 
 const ROUTE_PAGE_MAP = {
   Search: 'search',
@@ -74,22 +83,48 @@ function resolvePage(to) {
   return ROUTE_PAGE_MAP[to.name] || 'default'
 }
 
-export function startRouteLoading(to) {
-  pendingRoutePage.value = resolvePage(to)
-  isRouteLoading.value = true
-  if (safetyTimer) clearTimeout(safetyTimer)
-  safetyTimer = setTimeout(() => {
-    safetyTimer = null
-    isRouteLoading.value = false
-  }, ROUTE_LOADING_SAFETY_MS)
-}
-
-export function finishRouteLoading() {
+function clearLoadingTimers() {
   if (safetyTimer) {
     clearTimeout(safetyTimer)
     safetyTimer = null
   }
+  if (finishTimer) {
+    clearTimeout(finishTimer)
+    finishTimer = null
+  }
+}
+
+function hideRouteLoading() {
+  clearLoadingTimers()
   isRouteLoading.value = false
+}
+
+export function startRouteLoading(to) {
+  pendingRoutePage.value = resolvePage(to)
+  isRouteLoading.value = true
+  loadingToken += 1
+  const token = loadingToken
+  loadingStartedAt = Date.now()
+  clearLoadingTimers()
+  safetyTimer = setTimeout(() => {
+    if (token !== loadingToken) return
+    hideRouteLoading()
+  }, ROUTE_LOADING_SAFETY_MS)
+  return token
+}
+
+export function finishRouteLoading(token) {
+  if (token != null && token !== loadingToken) return
+  const remain = Math.max(0, ROUTE_LOADING_MIN_MS - (Date.now() - loadingStartedAt))
+  if (remain <= 0) {
+    hideRouteLoading()
+    return
+  }
+  if (finishTimer) clearTimeout(finishTimer)
+  finishTimer = setTimeout(() => {
+    if (token != null && token !== loadingToken) return
+    hideRouteLoading()
+  }, remain)
 }
 
 export function prefetchRoute(path) {

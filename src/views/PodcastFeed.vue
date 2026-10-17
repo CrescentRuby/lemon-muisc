@@ -1,24 +1,35 @@
 <template>
   <div class="podcast-feed-page">
     <div class="feed-head">
-      <div class="feed-nav">
-        <button type="button" class="btn-ghost btn-sm" @click="goBack">← 返回</button>
-        <router-link to="/podcasts" class="btn-ghost btn-sm">全部订阅</router-link>
+      <div class="title-line">
+        <router-link to="/podcasts" class="page-title"><PodcastIcon :size="20" />播客</router-link>
+        <button type="button" class="back-btn" @click="goBack">← 返回</button>
       </div>
       <div v-if="feed" class="feed-hero">
-        <img v-if="feed.imageUrl" class="hero-cover" :src="feed.imageUrl" alt="" />
-        <div v-else class="hero-cover hero-cover-empty"><PodcastIcon :size="48" /></div>
-        <div>
-          <h2>{{ feed.title }}</h2>
-          <p class="hero-meta">{{ feed.author }} · {{ total }} 期</p>
-          <p v-if="feed.description" class="hero-desc">{{ feed.description }}</p>
-          <div class="hero-actions">
-            <button class="btn-primary btn-sm" type="button" :disabled="!tracks.length" @click="playAll">从最新播放</button>
-            <button class="btn-ghost btn-sm" type="button" :disabled="refreshing" @click="onRefresh">
-              {{ refreshing ? '刷新中…' : '刷新节目' }}
-            </button>
-            <button class="btn-ghost btn-sm" type="button" @click="onUnsubscribe">取消订阅</button>
+        <div class="hero-top">
+          <img v-if="feed.imageUrl" class="hero-cover" :src="feed.imageUrl" alt="" />
+          <div v-else class="hero-cover hero-cover-empty"><PodcastIcon :size="40" /></div>
+          <div class="hero-copy">
+            <h2>{{ feed.title }}</h2>
+            <p class="hero-meta">{{ feed.author }} · {{ total }} 期</p>
           </div>
+        </div>
+        <p v-if="feed.description" class="hero-desc">{{ feed.description }}</p>
+        <div class="hero-actions">
+          <button class="btn-primary btn-sm play-btn" type="button" :disabled="!tracks.length" @click="playAll">
+            <span class="play-label-full">从最新播放</span>
+            <span class="play-label-short">播放</span>
+          </button>
+          <button
+            class="btn-ghost btn-sm"
+            type="button"
+            :disabled="refreshing"
+            title="重新请求 RSS，拉取最新节目"
+            @click="onRefresh"
+          >
+            {{ refreshing ? '拉取中…' : '拉取最新' }}
+          </button>
+          <button class="btn-ghost btn-sm" type="button" @click="onUnsubscribe">取消订阅</button>
         </div>
       </div>
     </div>
@@ -173,17 +184,52 @@ onMounted(() => loadPage(1))
 </script>
 
 <style scoped>
-.podcast-feed-page { padding: 8px 4px 28px; }
-.feed-nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.podcast-feed-page { padding: 4px 0 28px; }
+.title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.back-btn {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.back-btn:active { opacity: 0.7; }
 .feed-hero {
   display: flex;
-  gap: 16px;
-  margin: 12px 0 18px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0 12px;
 }
+.hero-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.hero-copy { min-width: 0; flex: 1; }
 .hero-cover {
-  width: 112px;
-  height: 112px;
+  width: 96px;
+  height: 96px;
   border-radius: 12px;
   object-fit: cover;
   flex-shrink: 0;
@@ -195,10 +241,19 @@ onMounted(() => loadPage(1))
   color: var(--text-muted);
   border: 1px solid var(--border-light);
 }
-.feed-hero h2 { margin: 0 0 6px; font-size: 22px; }
+.feed-hero h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 .hero-meta { margin: 0; color: var(--text-muted); font-size: 13px; }
 .hero-desc {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
@@ -207,30 +262,85 @@ onMounted(() => loadPage(1))
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.play-btn { min-width: 88px; }
+.play-label-short { display: none; }
 .form-error { color: var(--danger, #ef4444); font-size: 13px; }
 .form-toast { color: var(--accent); font-size: 13px; }
 .empty { padding: 24px; text-align: center; color: var(--text-muted); }
-.ep-list { display: flex; flex-direction: column; gap: 4px; }
+.ep-list { display: flex; flex-direction: column; gap: 0; }
 .ep-row {
   display: flex;
   gap: 10px;
-  align-items: center;
+  align-items: flex-start;
   width: 100%;
   text-align: left;
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 10px 8px;
+  padding: 10px 4px;
   border-radius: 10px;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 .ep-row:hover { background: var(--bg-hover); }
-.ep-idx { width: 28px; color: var(--text-muted); font-size: 13px; }
-.ep-title { font-weight: 600; }
-.ep-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; display: flex; gap: 10px; }
-.more-row { margin-top: 12px; }
-@media (max-width: 640px) {
-  .feed-hero { flex-direction: column; }
+.ep-row:active { opacity: 0.85; }
+.ep-idx {
+  width: 24px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+.ep-info { min-width: 0; flex: 1; }
+.ep-title {
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ep-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; gap: 10px; }
+.more-row { margin-top: 12px; text-align: center; }
+@media (max-width: 768px) {
+  .podcast-feed-page { padding: 0 0 8px; }
+  .page-title { font-size: 18px; }
+  .feed-hero { gap: 8px; margin: 10px 0 8px; }
+  .hero-top { gap: 12px; }
+  .hero-cover { width: 72px; height: 72px; border-radius: 10px; }
+  .feed-hero h2 { font-size: 16px; margin: 0 0 4px; }
+  .hero-meta { font-size: 12px; }
+  .hero-desc {
+    -webkit-line-clamp: 2;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .hero-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .hero-actions .btn-sm {
+    flex: 1;
+    height: 34px;
+    padding: 0 8px;
+    font-size: 12.5px;
+    min-width: 0;
+  }
+  .play-btn { min-width: 0; }
+  .play-label-full { display: none; }
+  .play-label-short { display: inline; }
+  .ep-row { padding: 10px 2px; gap: 8px; }
+  .ep-idx { width: 20px; font-size: 12px; }
+  .ep-title { font-size: 14px; }
 }
 </style>

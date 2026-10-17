@@ -707,18 +707,18 @@ const pagedSongs = computed(() => {
 })
 
 async function loadSongPage({ allowLocal = false } = {}) {
+  const hasLocal = libraryTracks.value.length > 0
   if (
     allowLocal
-    && libraryIndexFresh.value
+    && hasLocal
     && page.value === 1
     && (songSort.value === 'recent' || !songSort.value)
-    && libraryTracks.value.length
   ) {
     songTotal.value = libraryTrackTotal.value || libraryTracks.value.length
     songsLoading.value = false
-    return
+  } else if (!hasLocal) {
+    songsLoading.value = true
   }
-  songsLoading.value = true
   try {
     const sortMap = { recent: 'mtime', title: 'title', artist: 'artist', album: 'album' }
     const res = await fetchLibraryTracksPage(api, {
@@ -758,9 +758,9 @@ async function loadBrowsePreviews() {
     previewGenres.value = genresRes.items
     playlistCards.value = cards
   } catch {
-    previewArtists.value = []
-    previewAlbums.value = []
-    previewGenres.value = []
+    if (!previewArtists.value.length) previewArtists.value = []
+    if (!previewAlbums.value.length) previewAlbums.value = []
+    if (!previewGenres.value.length) previewGenres.value = []
   }
 }
 watch(playlistCardsRevision, () => {
@@ -864,6 +864,7 @@ onMounted(() => {
 })
 
 onActivated(() => {
+  try { hydrateLibrarySnapshot() } catch {}
   if (libraryIndexFresh.value && libraryTrackTotal.value > 0) {
     songTotal.value = libraryTrackTotal.value
   } else {
@@ -871,7 +872,7 @@ onActivated(() => {
       if (n > 0) songTotal.value = n
     }).catch(() => {})
   }
-  loadSongPage({ allowLocal: libraryIndexFresh.value && page.value === 1 })
+  loadSongPage({ allowLocal: true })
 })
 
 onUnmounted(() => {

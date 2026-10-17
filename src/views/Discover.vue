@@ -521,6 +521,7 @@ function getSelectedEntries() {
 }
 
 let discoverSeq = 0
+let playlistSeq = 0
 let playlistFetchAbort = null
 let recommendAbort = null
 let homeFeedAbort = null
@@ -548,15 +549,17 @@ let bootPromise = null
 
 onMounted(() => {
   bootPromise = (async () => {
+    const q = route.query
+    if (!q.openPlaylist && !q.openAlbum && discoverState.activeSource) {
+      loadHomeFeed()
+    }
     await loadDiscoverSources(api)
     if (!discoverState.songRegion) discoverState.songRegion = defaultSongRegion(discoverState.activeSource)
     if (!discoverState.albumRegion) discoverState.albumRegion = defaultAlbumRegion(discoverState.activeSource)
 
-    const q = route.query
     if (q.source && discoverState.sources[q.source]) {
       discoverState.activeSource = String(q.source)
     }
-    // keep-alive：深链在 onActivated 处理；首次无深链时再拉首页
     if (!q.openPlaylist && !q.openAlbum) {
       loadHomeFeed()
     }
@@ -592,7 +595,7 @@ async function handleDiscoverDeepLink() {
 
   if (openPlaylist) {
     discoverState.url = openPlaylist
-    await fetchPlaylist()
+    await fetchPlaylist({ keepInfo: Boolean(discoverState.playlistInfo) })
   } else if (openAlbum) {
     await openHomeAlbum(openAlbum)
   }
@@ -709,7 +712,7 @@ async function loadRecommend(opts = {}) {
   const sort = discoverState.recommendSort
 
   discoverState.recommendPage = 1
-  discoverState.recommendLoading = true
+  if (!discoverState.recommendList.length) discoverState.recommendLoading = true
   discoverState.recommendHasMore = false
   discoverState.playlistsError = ''
   try {
@@ -719,9 +722,11 @@ async function loadRecommend(opts = {}) {
   } catch (e) {
     if (isAbortedError(e)) return
     if (seq !== discoverSeq) return
-    discoverState.recommendList = []
-    discoverState.recommendHasMore = false
-    discoverState.recommendTotal = 0
+    if (!discoverState.recommendList.length) {
+      discoverState.recommendList = []
+      discoverState.recommendHasMore = false
+      discoverState.recommendTotal = 0
+    }
     discoverState.playlistsError = e.message || '获取歌单失败'
     if (/不支持的平台/.test(e.message || '')) {
       const prev = discoverState.activeSource
@@ -761,7 +766,7 @@ async function loadNewSongs(opts = {}) {
   if (!discoverState.activeSource) return
   const source = discoverState.activeSource
   const region = discoverState.songRegion || defaultSongRegion(source)
-  discoverState.newSongsLoading = true
+  if (!discoverState.newSongs.length) discoverState.newSongsLoading = true
   discoverState.newSongsError = ''
   discoverState.newSongsUnsupported = false
   try {
@@ -775,7 +780,7 @@ async function loadNewSongs(opts = {}) {
   } catch (e) {
     if (isAbortedError(e)) return
     if (source !== discoverState.activeSource) return
-    discoverState.newSongs = []
+    if (!discoverState.newSongs.length) discoverState.newSongs = []
     discoverState.newSongsError = e.message || '获取新歌失败'
   } finally {
     if (source === discoverState.activeSource) discoverState.newSongsLoading = false
@@ -786,7 +791,7 @@ async function loadNewAlbums(opts = {}) {
   if (!discoverState.activeSource) return
   const source = discoverState.activeSource
   const region = discoverState.albumRegion || defaultAlbumRegion(source)
-  discoverState.newAlbumsLoading = true
+  if (!discoverState.newAlbums.length) discoverState.newAlbumsLoading = true
   discoverState.newAlbumsError = ''
   discoverState.newAlbumsUnsupported = false
   try {
@@ -800,7 +805,7 @@ async function loadNewAlbums(opts = {}) {
   } catch (e) {
     if (isAbortedError(e)) return
     if (source !== discoverState.activeSource) return
-    discoverState.newAlbums = []
+    if (!discoverState.newAlbums.length) discoverState.newAlbums = []
     discoverState.newAlbumsError = e.message || '获取新碟失败'
   } finally {
     if (source === discoverState.activeSource) discoverState.newAlbumsLoading = false
@@ -810,7 +815,7 @@ async function loadNewAlbums(opts = {}) {
 async function loadRanks(opts = {}) {
   if (!discoverState.activeSource) return
   const source = discoverState.activeSource
-  discoverState.ranksLoading = true
+  if (!discoverState.ranks.length) discoverState.ranksLoading = true
   discoverState.ranksError = ''
   discoverState.ranksUnsupported = false
   try {
@@ -825,7 +830,7 @@ async function loadRanks(opts = {}) {
   } catch (e) {
     if (isAbortedError(e)) return
     if (source !== discoverState.activeSource) return
-    discoverState.ranks = []
+    if (!discoverState.ranks.length) discoverState.ranks = []
     discoverState.ranksError = e.message || '获取排行榜失败'
   } finally {
     if (source === discoverState.activeSource) discoverState.ranksLoading = false
@@ -923,7 +928,6 @@ async function openHomeAlbum(item) {
   } catch (e) {
     if (isAbortedError(e)) return
     showToast(e.message || '获取专辑失败', 'error')
-    backToRecommend()
   } finally {
     if (playlistFetchAbort === controller) playlistFetchAbort = null
     discoverState.loading = false
@@ -957,7 +961,15 @@ function backToRecommend() {
 
 async function openRecommendPlaylist(item) {
   discoverState.url = item.id
-  await fetchPlaylist()
+  if (item) {
+    discoverState.playlistInfo = {
+      name: item.name,
+      author: item.author || item.creator || item.userName || '',
+      img: item.img || item.picUrl || item.cover || '',
+      desc: item.desc || '',
+    }
+  }
+  await fetchPlaylist({ keepInfo: true })
 }
 
 async function fetchPlaylistByInput() {
@@ -1204,32 +1216,33 @@ async function confirmImportPlaylist() {
   }
 }
 
-async function fetchPlaylist() {
+async function fetchPlaylist({ keepInfo = false } = {}) {
   const input = discoverState.url.trim()
   if (!input || !discoverState.activeSource) return
 
   cancelPlaylistFetch()
   const controller = new AbortController()
   playlistFetchAbort = controller
-  const seq = ++discoverSeq
+  const seq = ++playlistSeq
   const source = discoverState.activeSource
+  const shellInfo = keepInfo ? discoverState.playlistInfo : null
 
   discoverState.loading = true
   discoverState.loadingMore = false
   discoverState.fetched = true
   discoverState.viewMode = 'detail'
   discoverState.results = []
-  discoverState.playlistInfo = null
+  if (!keepInfo) discoverState.playlistInfo = null
   discoverState.total = 0
   resetPlaylistTrackPage()
   clearSelection()
   closeMenus()
   try {
     const partialRes = await api.playlist.fetch(input, source, { partial: true, signal: controller.signal })
-    if (seq !== discoverSeq || source !== discoverState.activeSource) return
+    if (seq !== playlistSeq || source !== discoverState.activeSource) return
     const partialData = partialRes.data
     discoverState.results = (partialData.list || []).map(cleanTrackItem)
-    discoverState.playlistInfo = partialData.info || null
+    discoverState.playlistInfo = partialData.info || shellInfo
     discoverState.total = partialData.total || discoverState.results.length
     discoverState.loading = false
 
@@ -1237,7 +1250,7 @@ async function fetchPlaylist() {
       discoverState.loadingMore = true
       try {
         const fullRes = await api.playlist.fetch(input, source, { signal: controller.signal })
-        if (seq !== discoverSeq || source !== discoverState.activeSource) return
+        if (seq !== playlistSeq || source !== discoverState.activeSource) return
         const fullData = fullRes.data
         discoverState.results = (fullData.list || []).map(cleanTrackItem)
         discoverState.playlistInfo = fullData.info || discoverState.playlistInfo
@@ -1245,7 +1258,7 @@ async function fetchPlaylist() {
       } catch (e) {
         if (!isAbortedError(e)) showToast(e.message || '剩余歌曲加载失败', 'error')
       } finally {
-        if (seq === discoverSeq) discoverState.loadingMore = false
+        if (seq === playlistSeq) discoverState.loadingMore = false
       }
     }
 
@@ -1254,13 +1267,13 @@ async function fetchPlaylist() {
     }
   } catch (e) {
     if (isAbortedError(e)) return
-    if (seq !== discoverSeq) return
+    if (seq !== playlistSeq) return
     discoverState.results = []
-    discoverState.playlistInfo = null
+    if (!shellInfo) discoverState.playlistInfo = null
     showToast(e.message, 'error')
   } finally {
     if (playlistFetchAbort === controller) playlistFetchAbort = null
-    if (seq === discoverSeq) {
+    if (seq === playlistSeq) {
       discoverState.loading = false
       discoverState.loadingMore = false
     }

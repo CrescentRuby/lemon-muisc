@@ -593,8 +593,8 @@ function getSelectedEntries() {
     .filter(({ key }) => selectedKeys.value.has(key))
 }
 
-onMounted(async () => {
-  await loadSearchSources(api)
+onMounted(() => {
+  loadSearchSources(api).catch(() => {})
   loadPacedDefaults()
   refreshPacedJob()
   document.addEventListener('click', closeMenus)

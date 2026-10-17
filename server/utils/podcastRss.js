@@ -111,9 +111,30 @@ function parseChannel(xml) {
   }
 }
 
+const WEB_PAGE_HINT = '这是网页地址，不是播客 RSS。请粘贴订阅源 XML（一般以 rss / feed / xml 结尾），不要贴专辑或节目的网页链接。'
+
+function isLikelyWebPageUrl(url) {
+  const u = String(url || '')
+  if (/\.(xml|rss|atom)(\?|$)/i.test(u)) return false
+  if (/\/(rss|feed|atom)(\/|$|\?)/i.test(u)) return false
+  if (/ximalaya\.com\/album\//i.test(u)) return true
+  if (/qingting\.fm\/(channels|vchannels)\//i.test(u)) return true
+  if (/music\.163\.com\/(dj|radio|program)/i.test(u)) return true
+  return false
+}
+
+function looksLikeHtml(text, contentType) {
+  const ct = String(contentType || '').toLowerCase()
+  if (/rss|atom|\bxml\b/.test(ct)) return false
+  if (ct.includes('text/html')) return true
+  const head = String(text || '').slice(0, 1200).toLowerCase()
+  return /<!doctype html|<html[\s>]/.test(head)
+}
+
 export async function fetchPodcastFeed(feedUrl) {
   const url = String(feedUrl || '').trim()
   if (!/^https?:\/\//i.test(url)) throw new Error('请填写 http(s) 播客 RSS 地址')
+  if (isLikelyWebPageUrl(url)) throw new Error(WEB_PAGE_HINT)
   const res = await needle('get', url, {
     parse_response: false,
     follow_max: 5,
@@ -126,8 +147,14 @@ export async function fetchPodcastFeed(feedUrl) {
   const status = res.statusCode || 0
   if (status >= 400) throw new Error(`订阅源返回 ${status}`)
   const buf = Buffer.isBuffer(res.body) ? res.body : Buffer.from(String(res.body || ''), 'utf8')
-  if (buf.length > MAX_BYTES) throw new Error('订阅源过大')
+  const contentType = res.headers?.['content-type'] || ''
+  if (buf.length > MAX_BYTES) {
+    throw new Error(looksLikeHtml(buf.toString('utf8').slice(0, 1200), contentType)
+      ? WEB_PAGE_HINT
+      : '订阅源超过 8MB，当前只支持标准播客 RSS，不支持整站网页')
+  }
   let xml = buf.toString('utf8').replace(/^\uFEFF/, '')
+  if (looksLikeHtml(xml, contentType)) throw new Error(WEB_PAGE_HINT)
   if (!xml.includes('<')) throw new Error('不是有效的 RSS/Atom')
   const meta = parseChannel(xml)
   const episodes = parseItems(xml)

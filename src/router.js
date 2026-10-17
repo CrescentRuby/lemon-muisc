@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import {
   getToken,
@@ -5,7 +6,7 @@ import {
   isSessionValid,
   currentUser,
 } from './utils/auth.js'
-import { finishRouteLoading, startRouteLoading } from './stores/navigation.js'
+import { finishRouteLoading, getRouteLoadingToken, startRouteLoading } from './stores/navigation.js'
 import Login from './views/Login.vue'
 
 const routes = [
@@ -52,6 +53,7 @@ function ensureAuthInit() {
 }
 
 router.beforeEach(async (to, from) => {
+  if (to.path !== from.path) startRouteLoading(to)
   await ensureAuthInit()
 
   if (to.meta.public) {
@@ -85,16 +87,20 @@ router.beforeEach(async (to, from) => {
 })
 
 router.afterEach((to, from) => {
-  if (to.meta.public || to.path === from.path) {
+  if (to.meta.public) {
     finishRouteLoading()
     return
   }
-  // 双 rAF：等 keep-alive 激活/绘制后再关骨架，避免闪一下空壳
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => finishRouteLoading())
+  // 仅 query 变化时不要清掉正在切 tab 的骨架，否则会闪回上一页
+  if (to.path === from.path) return
+  const token = getRouteLoadingToken()
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => finishRouteLoading(token))
+    })
   })
 })
 
 router.onError(() => {
-  finishRouteLoading()
+  finishRouteLoading(getRouteLoadingToken())
 })
