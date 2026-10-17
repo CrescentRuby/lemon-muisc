@@ -8,6 +8,8 @@ const DEVICE_TTL_MS = 90_000
 
 /** @type {Map<string, { udn: string, name: string, location: string, controlURL: string, seenAt: number }>} */
 const deviceCache = new Map()
+/** 正在投屏的设备不过期，避免连播下一首时报「设备不在线」 */
+const stickyUdns = new Set()
 
 function parseHeaderMap(text) {
   const map = {}
@@ -20,7 +22,7 @@ function parseHeaderMap(text) {
 }
 
 function xmlTag(xml, name) {
-  const re = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i')
+  const re = new RegExp(`<(?:[\\w-]+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${name}>`, 'i')
   const m = String(xml || '').match(re)
   return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : ''
 }
@@ -117,6 +119,7 @@ export async function discoverDlnaDevices({ timeoutMs = 2800 } = {}) {
 function pruneCache() {
   const now = Date.now()
   for (const [id, d] of deviceCache) {
+    if (stickyUdns.has(id)) continue
     if (now - d.seenAt > DEVICE_TTL_MS) deviceCache.delete(id)
   }
 }
@@ -131,8 +134,36 @@ export function listCachedDevices() {
 }
 
 export function getCachedDevice(udn) {
+  const id = String(udn || '')
+  const hit = deviceCache.get(id)
+  if (hit) return hit
   pruneCache()
-  return deviceCache.get(udn) || null
+  return deviceCache.get(id) || null
+}
+
+export function pinDlnaDevice(udn) {
+  const id = String(udn || '').trim()
+  if (!id) return
+  stickyUdns.add(id)
+  const d = deviceCache.get(id)
+  if (d) d.seenAt = Date.now()
+}
+
+export function unpinDlnaDevice(udn) {
+  stickyUdns.delete(String(udn || ''))
+}
+
+export async function ensureDlnaDevice(udn) {
+  const id = String(udn || '').trim()
+  if (!id) throw new Error('缺少设备')
+  let device = getCachedDevice(id)
+  if (!device) {
+    await discoverDlnaDevices({ timeoutMs: 2200 })
+    device = getCachedDevice(id)
+  }
+  if (!device) throw new Error('设备不在线，请重新搜索')
+  pinDlnaDevice(id)
+  return device
 }
 
 function escapeXml(s) {
@@ -143,7 +174,7 @@ function escapeXml(s) {
     .replace(/"/g, '&quot;')
 }
 
-async function soap(controlURL, action, bodyInner) {
+async function soap(controlURL, action, bodyInner, timeout = 10000) {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
   <s:Body>
@@ -152,7 +183,7 @@ async function soap(controlURL, action, bodyInner) {
 </s:Envelope>`
   const res = await needle('post', controlURL, xml, {
     parse_response: false,
-    timeout: 10000,
+    timeout,
     headers: {
       'Content-Type': 'text/xml; charset="utf-8"',
       SOAPACTION: `"urn:schemas-upnp-org:service:AVTransport:1#${action}"`,
@@ -167,7 +198,21 @@ async function soap(controlURL, action, bodyInner) {
   return text
 }
 
-function didl({ title, artist, album, uri }) {
+function dlnaPn(mime) {
+  const m = String(mime || 'audio/mpeg').toLowerCase()
+  if (m.includes('mp4') || m.includes('aac') || m.includes('m4a')) return 'AAC_ISO'
+  if (m.includes('flac')) return 'FLAC'
+  if (m.includes('wav') || m.includes('lpcm')) return 'LPCM'
+  return 'MP3'
+}
+
+function protocolInfo(mime) {
+  const m = String(mime || 'audio/mpeg').split(';')[0].trim() || 'audio/mpeg'
+  const pn = dlnaPn(m)
+  return `http-get:*:${m}:DLNA.ORG_PN=${pn};DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000`
+}
+
+function didl({ title, artist, album, uri, mime }) {
   return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
     <item id="1" parentID="0" restricted="1">
       <dc:title>${escapeXml(String(title || '音频').slice(0, 200))}</dc:title>
@@ -175,32 +220,104 @@ function didl({ title, artist, album, uri }) {
       <dc:creator>${escapeXml(String(artist || '').slice(0, 200))}</dc:creator>
       <upnp:artist>${escapeXml(String(artist || '').slice(0, 200))}</upnp:artist>
       <upnp:album>${escapeXml(String(album || '').slice(0, 200))}</upnp:album>
-      <res protocolInfo="http-get:*:audio/mpeg:*">${escapeXml(uri)}</res>
+      <res protocolInfo="${escapeXml(protocolInfo(mime))}">${escapeXml(uri)}</res>
     </item>
   </DIDL-Lite>`
 }
 
-export async function dlnaPlay(udn, { uri, title, artist, album }) {
-  const device = getCachedDevice(udn)
-  if (!device) throw new Error('设备不在线，请重新搜索')
+function friendlyDlnaError(raw) {
+  const s = String(raw || '')
+  if (/无法读取媒体音频|716|714|701|resource not found|illegal mime|unsupported/i.test(s)) {
+    return '音箱无法读取该音频（常见于小爱只认 MP3）。已按投屏转码重试；仍失败请确认音箱与 NAS 同一网段，并用局域网地址打开柠檬。'
+  }
+  return s || '投屏失败'
+}
+
+async function setTransportUri(device, uri, metaInner) {
+  await soap(device.controlURL, 'SetAVTransportURI', `
+    <InstanceID>0</InstanceID>
+    <CurrentURI>${escapeXml(uri)}</CurrentURI>
+    <CurrentURIMetaData>${metaInner}</CurrentURIMetaData>
+  `)
+}
+
+export async function dlnaPlay(udn, { uri, title, artist, album, mime = 'audio/mpeg' }) {
+  const device = await ensureDlnaDevice(udn)
   if (!uri) throw new Error('缺少播放地址')
   try {
     await soap(device.controlURL, 'Stop', '<InstanceID>0</InstanceID>')
   } catch {}
-  await soap(device.controlURL, 'SetAVTransportURI', `
-    <InstanceID>0</InstanceID>
-    <CurrentURI>${escapeXml(uri)}</CurrentURI>
-    <CurrentURIMetaData>${escapeXml(didl({ title, artist, album, uri }))}</CurrentURIMetaData>
-  `)
-  await soap(device.controlURL, 'Play', '<InstanceID>0</InstanceID><Speed>1</Speed>')
+  const xml = didl({ title, artist, album, uri, mime })
+  const attempts = [
+    () => setTransportUri(device, uri, escapeXml(xml)),
+    () => setTransportUri(device, uri, `<![CDATA[${xml}]]>`),
+    () => setTransportUri(device, uri, ''),
+  ]
+  let lastErr = null
+  for (const run of attempts) {
+    try {
+      await run()
+      lastErr = null
+      break
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  if (lastErr) throw new Error(friendlyDlnaError(lastErr.message))
+  try {
+    await soap(device.controlURL, 'Play', '<InstanceID>0</InstanceID><Speed>1</Speed>')
+  } catch (e) {
+    throw new Error(friendlyDlnaError(e.message))
+  }
   return { ok: true, udn: device.udn, name: device.name }
 }
 
 export async function dlnaStop(udn) {
-  const device = getCachedDevice(udn)
-  if (!device) throw new Error('设备不在线，请重新搜索')
-  await soap(device.controlURL, 'Stop', '<InstanceID>0</InstanceID>')
+  const id = String(udn || '').trim()
+  let device = getCachedDevice(id)
+  if (!device) {
+    try { device = await ensureDlnaDevice(id) } catch {}
+  }
+  unpinDlnaDevice(id)
+  if (!device) return { ok: true }
+  try {
+    await soap(device.controlURL, 'Stop', '<InstanceID>0</InstanceID>')
+  } catch {}
   return { ok: true }
+}
+
+function parseUpnpTime(raw) {
+  const s = String(raw || '').trim()
+  if (!s || s === 'NOT_IMPLEMENTED' || s === '-1') return 0
+  const hms = s.match(/^(\d+):(\d{1,2}):(\d{1,2})(?:\.(\d+))?$/)
+  if (hms) return Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
+  const ms = s.match(/^(\d{1,2}):(\d{1,2})(?:\.(\d+))?$/)
+  if (ms) return Number(ms[1]) * 60 + Number(ms[2])
+  const n = Number(s)
+  return Number.isFinite(n) && n > 0 && n < 86400 ? n : 0
+}
+
+export async function dlnaGetStatus(udn) {
+  const device = await ensureDlnaDevice(udn)
+  let state = ''
+  let relTime = 0
+  let duration = 0
+  try {
+    const info = await soap(device.controlURL, 'GetTransportInfo', '<InstanceID>0</InstanceID>', 4000)
+    state = xmlTag(info, 'CurrentTransportState')
+  } catch {}
+  try {
+    const pos = await soap(device.controlURL, 'GetPositionInfo', '<InstanceID>0</InstanceID>', 4000)
+    relTime = parseUpnpTime(xmlTag(pos, 'RelTime') || xmlTag(pos, 'AbsTime'))
+    duration = parseUpnpTime(xmlTag(pos, 'TrackDuration'))
+  } catch {}
+  return {
+    ok: true,
+    udn: device.udn,
+    state: String(state || '').toUpperCase(),
+    relTime,
+    duration,
+  }
 }
 
 export function getAdvertisedBaseUrl(req) {

@@ -1317,6 +1317,11 @@ function stopPlaybackGraph() {
 function bindAudioElementEvents(el) {
   el.addEventListener('playing', () => {
     if (audio !== el) return
+    if (dlnaCastingUdn.value) {
+      try { el.pause() } catch {}
+      try { el.muted = true } catch {}
+      return
+    }
     if ((el.currentTime || 0) > 0.02) {
       clearPlaybackKickWatch()
       endPlaybackBuffer()
@@ -1337,6 +1342,7 @@ function bindAudioElementEvents(el) {
     if (audio !== el) return
     tickPlayStatSession()
     if (uiScrubbing) return
+    if (dlnaCastingUdn.value) return
     currentTime.value = audio.currentTime
     // CarPlay / 弱网：勿在 timeupdate 里高频推 Media Session（IPC 过载会卡音）
     // 进度由 setPositionState 的 playbackRate 让系统自行推算，仅在 play/pause/seek/切歌时同步
@@ -1397,7 +1403,7 @@ function bindAudioElementEvents(el) {
     }
   })
   el.addEventListener('ended', () => {
-    if (audio === el) onTrackEnded()
+    if (audio === el && !dlnaCastingUdn.value) onTrackEnded()
   })
   el.addEventListener('error', () => {
     if (audio !== el) return
@@ -1408,6 +1414,7 @@ function bindAudioElementEvents(el) {
     playerError.value = formatPlayClientError(new Error(raw)) || raw
     loadingPlay.value = null
     logPlayerIssue('error', raw, { event: 'audio.error' })
+    if (dlnaCastingUdn.value) return
     // 弱网/流量中途断流：自动跳下一首，避免整列表卡在暂停
     if (playQueue.value.length > 1 && !mediaErrorAutoSkipInFlight) {
       scheduleMediaErrorAutoSkip(raw)
@@ -1482,7 +1489,7 @@ async function restoreNativeAudioOutput() {
     }
   } catch {}
   applyAudioOutput()
-  if (wasPlaying) {
+  if (wasPlaying && !dlnaCastingUdn.value) {
     try { await audio.play() } catch {}
   }
 }
@@ -1561,6 +1568,10 @@ async function ensurePlaybackGraph() {
 }
 
 async function resumeAudioPlayback() {
+  if (dlnaCastingUdn.value) {
+    pauseLocalPlayback()
+    return
+  }
   if (visualizerEnabled.value && !backgroundNativeOverride) {
     try {
       if (audioCtx?.state === 'suspended') await audioCtx.resume()
@@ -1940,19 +1951,163 @@ export const currentLocalTrackPath = computed(() => {
 
 export function pauseLocalPlayback() {
   try { audio?.pause() } catch {}
+  try { if (audio && dlnaCastingUdn.value) audio.muted = true } catch {}
   endPlaybackBuffer()
-  isPaused.value = true
+  if (!dlnaCastingUdn.value) isPaused.value = true
   syncMediaSessionPlaybackState()
+}
+
+let dlnaPollTimer = 0
+let dlnaClockTimer = 0
+let dlnaIgnoreStopUntil = 0
+let dlnaSeenPlaying = false
+let dlnaPollBusy = false
+let dlnaClockStartedAt = 0
+let dlnaClockFrozenElapsed = 0
+let dlnaClockFrozen = false
+let dlnaEndedOnce = false
+
+function dlnaTrackDuration() {
+  const meta = displayDuration.value || 0
+  const audioDur = Number(duration.value) || 0
+  if (audioDur > 1 && audioDur < 86400) return audioDur
+  if (meta > 1 && meta < 86400) return meta
+  return 0
+}
+
+function stopDlnaProgressClock() {
+  if (dlnaClockTimer) {
+    clearInterval(dlnaClockTimer)
+    dlnaClockTimer = 0
+  }
+}
+
+function freezeDlnaProgressClock() {
+  if (dlnaClockFrozen) return
+  dlnaClockFrozenElapsed = Math.max(0, (Date.now() - dlnaClockStartedAt) / 1000)
+  dlnaClockFrozen = true
+}
+
+function resumeDlnaProgressClock() {
+  if (!dlnaClockFrozen) return
+  dlnaClockStartedAt = Date.now() - dlnaClockFrozenElapsed * 1000
+  dlnaClockFrozen = false
+}
+
+function startDlnaProgressClock() {
+  stopDlnaProgressClock()
+  dlnaClockStartedAt = Date.now()
+  dlnaClockFrozenElapsed = 0
+  dlnaClockFrozen = false
+  dlnaEndedOnce = false
+  currentTime.value = 0
+  dlnaClockTimer = setInterval(() => {
+    if (!dlnaCastingUdn.value) return
+    const elapsed = dlnaClockFrozen
+      ? dlnaClockFrozenElapsed
+      : (Date.now() - dlnaClockStartedAt) / 1000
+    const dur = dlnaTrackDuration()
+    currentTime.value = dur > 0 ? Math.min(elapsed, dur) : elapsed
+    updateActiveLyric(currentTime.value)
+    if (dlnaEndedOnce || dlnaClockFrozen) return
+    if (dur > 3 && elapsed >= dur + 1.2) {
+      fireDlnaTrackEnded()
+    }
+  }, 400)
+}
+
+function fireDlnaTrackEnded() {
+  if (dlnaEndedOnce || !dlnaCastingUdn.value) return
+  dlnaEndedOnce = true
+  dlnaIgnoreStopUntil = Date.now() + 10000
+  stopDlnaProgressClock()
+  onTrackEnded().catch(() => {
+    dlnaEndedOnce = false
+  })
+}
+
+function stopDlnaStatusPoll() {
+  if (dlnaPollTimer) {
+    clearInterval(dlnaPollTimer)
+    dlnaPollTimer = 0
+  }
+  stopDlnaProgressClock()
+  dlnaSeenPlaying = false
+  dlnaPollBusy = false
+  dlnaEndedOnce = false
+}
+
+function ensureDlnaStatusPoll() {
+  if (!dlnaCastingUdn.value) return
+  if (dlnaPollTimer) return
+  dlnaPollTimer = setInterval(() => {
+    pollDlnaStatus().catch(() => {})
+  }, 2000)
+}
+
+async function pollDlnaStatus() {
+  const udn = dlnaCastingUdn.value
+  if (!udn || dlnaPollBusy || dlnaEndedOnce) return
+  dlnaPollBusy = true
+  try {
+    const st = await api.dlna.status(udn)
+    if (dlnaCastingUdn.value !== udn) return
+    const state = String(st?.state || '').toUpperCase()
+    const rel = Number(st?.relTime) || 0
+    const durFromTv = Number(st?.duration) || 0
+    const dur = dlnaTrackDuration()
+    if (durFromTv > 1 && durFromTv < 86400 && (!duration.value || duration.value < 1)) {
+      duration.value = durFromTv
+    }
+
+    const relPlausible = rel > 0.4 && dur > 3 && rel <= dur + 2.5
+    if (relPlausible) dlnaSeenPlaying = true
+    if (state === 'PLAYING' || state === 'TRANSITIONING') dlnaSeenPlaying = true
+
+    if (state === 'PAUSED_PLAYBACK') {
+      freezeDlnaProgressClock()
+      return
+    }
+    if (dlnaClockFrozen && (state === 'PLAYING' || relPlausible)) {
+      resumeDlnaProgressClock()
+    }
+
+    if (relPlausible && !dlnaClockFrozen) {
+      const elapsed = (Date.now() - dlnaClockStartedAt) / 1000
+      if (Math.abs(rel - elapsed) >= 2 && Math.abs(rel - elapsed) <= 12) {
+        dlnaClockStartedAt = Date.now() - rel * 1000
+      }
+    }
+
+    if (Date.now() < dlnaIgnoreStopUntil) return
+    if (!dlnaSeenPlaying) return
+    if (state === 'STOPPED' || state === 'NO_MEDIA_PRESENT') {
+      fireDlnaTrackEnded()
+    }
+  } catch {
+    /* 设备不回报状态时用本机曲长计时切歌 */
+  } finally {
+    dlnaPollBusy = false
+  }
 }
 
 export function setDlnaCasting(udn) {
   dlnaCastingUdn.value = String(udn || '')
-  if (dlnaCastingUdn.value) pauseLocalPlayback()
+  if (dlnaCastingUdn.value) {
+    pauseLocalPlayback()
+    isPaused.value = false
+    startDlnaProgressClock()
+    ensureDlnaStatusPoll()
+  } else {
+    stopDlnaStatusPoll()
+  }
 }
 
 export async function stopDlnaCast() {
   const udn = dlnaCastingUdn.value
   dlnaCastingUdn.value = ''
+  stopDlnaStatusPoll()
+  try { if (audio) audio.muted = false } catch {}
   if (!udn) return
   try { await api.dlna.stop(udn) } catch {}
 }
@@ -1960,6 +2115,9 @@ export async function stopDlnaCast() {
 export async function pushPlayingToDlna(udn = dlnaCastingUdn.value) {
   const t = currentPlaying.value
   if (!t || !udn) return
+  dlnaIgnoreStopUntil = Date.now() + 8000
+  dlnaSeenPlaying = false
+  dlnaEndedOnce = false
   const source = t.podcastEpisodeId || t.source === 'podcast'
     ? 'podcast'
     : (currentPlayPlatform.value || t.source || '')
@@ -1979,6 +2137,9 @@ export async function pushPlayingToDlna(udn = dlnaCastingUdn.value) {
     album: t.album || t.albumName,
   })
   pauseLocalPlayback()
+  isPaused.value = false
+  startDlnaProgressClock()
+  ensureDlnaStatusPoll()
 }
 
 async function handoffToDlnaIfCasting() {
@@ -2428,7 +2589,7 @@ export function initPlayer() {
     restoreVisualizerAfterBackground().catch(() => {})
     if (audio && !audio.paused && hasMediaSrc && visualizerEnabled.value && !backgroundNativeOverride) {
       ensureAudioContextRunning().then(() => ensurePlaybackGraph()).catch(() => {})
-    } else if (isBackgroundPlayActive() && audio && !isPaused.value) {
+    } else if (isBackgroundPlayActive() && audio && !isPaused.value && !dlnaCastingUdn.value) {
       if (audio.paused) audio.play().catch(() => {})
       syncMediaSessionPlaybackState()
       syncMediaSessionPosition()
@@ -2451,13 +2612,19 @@ async function onTrackEnded() {
   if (endedHandling) return
   endedHandling = true
   try {
-    if (playMode.value === 'single' && audio) {
-      audio.currentTime = 0
-      applyAudioOutput()
-      beginPlaybackBuffer()
-      await audio.play()
-      if (visualizerEnabled.value) scheduleAudioAnalyserRefresh()
-      isPaused.value = false
+    if (playMode.value === 'single') {
+      if (dlnaCastingUdn.value) {
+        await pushPlayingToDlna()
+        return
+      }
+      if (audio) {
+        audio.currentTime = 0
+        applyAudioOutput()
+        beginPlaybackBuffer()
+        await audio.play()
+        if (visualizerEnabled.value) scheduleAudioAnalyserRefresh()
+        isPaused.value = false
+      }
       return
     }
     if (activeDynamicList.value === ROAM_PLAYLIST_ID) {
@@ -3074,7 +3241,7 @@ async function startPlaybackFromUrl(url, { resumeTime = 0, item, source, isLocal
   if (dlnaCastingUdn.value) {
     try { audio.pause() } catch {}
     endPlaybackBuffer()
-    isPaused.value = true
+    isPaused.value = false
     syncMediaSessionPlaybackState()
   } else {
     try {
@@ -3153,7 +3320,10 @@ function watchPlaybackKickstart({ intent, isLocal, url, item, source }) {
 
   const tick = async () => {
     if (token !== playbackKickToken || intent !== playIntentToken) return
-    if (!audio || isPaused.value) {
+    if (!audio || isPaused.value || dlnaCastingUdn.value) {
+      if (dlnaCastingUdn.value) {
+        try { audio?.pause() } catch {}
+      }
       endPlaybackBuffer()
       return
     }
@@ -3523,6 +3693,22 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
   currentPlayQuality.value = isLocal
     ? resolveLocalPlayQualityLabel(enrichedItem || item)
     : String(getPlayQuality() || '')
+  if (dlnaCastingUdn.value) {
+    loadingPlay.value = null
+    endPlaybackBuffer()
+    isPaused.value = false
+    pauseLocalPlayback()
+    applyDurationFallback(enrichedItem)
+    try {
+      await pushPlayingToDlna()
+    } catch (e) {
+      showPlayerNotice(e?.message || '投屏同步失败', 4000)
+      throw e
+    }
+    saveQueueState()
+    updateMediaSession()
+    return
+  }
   const preferredQuality = getPlayQuality()
   // 在线：试听音质优先；本地文件不走音质档
   const qualityLadder = isLocal ? [preferredQuality] : buildPlayQualityLadder(preferredQuality)
@@ -4098,8 +4284,14 @@ export async function playPrev() {
 export async function togglePause() {
   if (!currentPlaying.value) return
   unlockAudioFromGesture()
-  if (dlnaCastingUdn.value && (audio?.paused || isPaused.value)) {
+  if (dlnaCastingUdn.value) {
     await stopDlnaCast()
+    try { audio?.pause() } catch {}
+    endPlaybackBuffer()
+    isPaused.value = true
+    syncMediaSessionPlaybackState()
+    saveQueueState()
+    return
   }
 
   // 缓冲中再点：已有媒体则按「暂停」处理；尚未就绪才取消整次加载

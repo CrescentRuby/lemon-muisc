@@ -1,7 +1,8 @@
 import needle from 'needle'
 
-const FETCH_TIMEOUT_MS = 25000
-const MAX_BYTES = 8 * 1024 * 1024
+const FETCH_TIMEOUT_MS = 60000
+/** 喜马拉雅等长专辑 RSS 常超过 8MB；苹果播客可订阅，这里放宽 */
+const MAX_BYTES = 32 * 1024 * 1024
 const MAX_EPISODES = 400
 
 function stripCdata(s) {
@@ -141,17 +142,17 @@ export async function fetchPodcastFeed(feedUrl) {
     timeout: FETCH_TIMEOUT_MS,
     headers: {
       Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
-      'User-Agent': 'LemonMusic/1.2 (podcast)',
+      'User-Agent': 'iTunes/16.0 LemonMusic/1.2 (podcast)',
     },
   })
   const status = res.statusCode || 0
   if (status >= 400) throw new Error(`订阅源返回 ${status}`)
   const buf = Buffer.isBuffer(res.body) ? res.body : Buffer.from(String(res.body || ''), 'utf8')
   const contentType = res.headers?.['content-type'] || ''
+  const head = buf.toString('utf8').slice(0, 1200)
+  if (looksLikeHtml(head, contentType)) throw new Error(WEB_PAGE_HINT)
   if (buf.length > MAX_BYTES) {
-    throw new Error(looksLikeHtml(buf.toString('utf8').slice(0, 1200), contentType)
-      ? WEB_PAGE_HINT
-      : '订阅源超过 8MB，当前只支持标准播客 RSS，不支持整站网页')
+    throw new Error('订阅源过大（超过 32MB），请换更精简的 RSS')
   }
   let xml = buf.toString('utf8').replace(/^\uFEFF/, '')
   if (looksLikeHtml(xml, contentType)) throw new Error(WEB_PAGE_HINT)

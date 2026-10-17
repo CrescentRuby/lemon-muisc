@@ -27,7 +27,7 @@
 
     <div v-if="loading && !feeds.length" class="empty card">正在加载订阅…</div>
     <div v-else-if="!feeds.length" class="empty card">
-      还没有订阅。请贴 RSS/Atom 订阅源（xml），喜马拉雅专辑网页无法直接订阅。
+      还没有订阅。请贴 RSS/Atom 订阅源（如以 .xml / rss / feed 结尾）。专辑网页链接无法订阅。
     </div>
     <div v-else class="feed-grid">
       <div

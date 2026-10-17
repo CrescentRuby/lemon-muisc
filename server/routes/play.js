@@ -27,6 +27,7 @@ import { resolvePathByTrackId } from '../utils/libraryCache.js'
 import { ensureApePlayWav } from '../utils/apePlay.js'
 import { buildMusicCdnHeaders } from '../utils/musicCdnHeaders.js'
 import { ensureSmoothPlayAac, canSmoothOrRepairTranscode, warmSmoothPlayAac } from '../utils/smoothPlay.js'
+import { ensureDlnaPlayMp3 } from '../utils/dlnaTranscode.js'
 import { isPlatformEnabled } from '../utils/enabledPlatforms.js'
 import { AVAILABLE_SOURCES } from '../musicSdk.js'
 import { getEpisodeForUser } from '../utils/podcastStore.js'
@@ -376,14 +377,40 @@ function resolveStreamLocalFile(req) {
   return ''
 }
 
+function applyDlnaStreamHeaders(res, mime) {
+  const m = String(mime || 'audio/mpeg').split(';')[0].trim() || 'audio/mpeg'
+  let pn = 'MP3'
+  if (/mp4|aac|m4a/i.test(m)) pn = 'AAC_ISO'
+  else if (/flac/i.test(m)) pn = 'FLAC'
+  else if (/wav|lpcm/i.test(m)) pn = 'LPCM'
+  res.setHeader('transferMode.dlna.org', 'Streaming')
+  res.setHeader(
+    'contentFeatures.dlna.org',
+    `DLNA.ORG_PN=${pn};DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000`,
+  )
+}
+
+function wantsDlnaHeaders(req) {
+  const ua = String(req.headers['user-agent'] || '')
+  const url = String(req.originalUrl || req.url || '')
+  if (String(req.query?.dlna || '') === '1') return true
+  if (/dlna\.mp3|proxy\.mp3/i.test(url)) return true
+  return /DLNA|UPnP|Intel Micro|Portable SDK|Linux\/.*UPnP| Lavf|ffmpeg/i.test(ua)
+}
+
 function applyRangeOrFull(res, req, filePath, mime) {
   const stat = fs.statSync(filePath)
   const total = stat.size
   const range = req.headers.range
   setLocalStreamHeaders(res, req)
+  if (wantsDlnaHeaders(req)) applyDlnaStreamHeaders(res, mime)
   res.setHeader('Accept-Ranges', 'bytes')
   res.setHeader('Content-Type', mime)
   res.setHeader('Cache-Control', 'private, max-age=3600')
+  if (req.method === 'HEAD') {
+    res.setHeader('Content-Length', total)
+    return res.status(200).end()
+  }
 
   if (range) {
     const m = /^bytes=(\d*)-(\d*)$/.exec(range)
@@ -424,7 +451,7 @@ function pipeLocalFile(res, filePath, { start = 0, end } = {}) {
   stream.pipe(res)
 }
 
-playRouter.get('/local', (req, res) => {
+function localPlayHandler(req, res) {
   try {
     const filePath = resolveStreamLocalFile(req)
     if (!filePath) {
@@ -464,10 +491,12 @@ playRouter.get('/local', (req, res) => {
       res.status(500).json({ error: formatUserError(e, '读取本地文件失败') })
     }
   }
-})
+}
+playRouter.get('/local', localPlayHandler)
+playRouter.head('/local', localPlayHandler)
 
 /** APE：ffmpeg 转成 WAV 缓存后再按本地文件流式输出（支持 Range） */
-playRouter.get('/local-ape', async (req, res) => {
+async function localApeHandler(req, res) {
   try {
     const filePath = resolveStreamLocalFile(req)
     if (!filePath) {
@@ -492,13 +521,15 @@ playRouter.get('/local-ape', async (req, res) => {
       res.status(status).json({ error: formatUserError(e, 'APE 播放失败') })
     }
   }
-})
+}
+playRouter.get('/local-ape', localApeHandler)
+playRouter.head('/local-ape', localApeHandler)
 
 /**
  * 车机 / 弱网：本地高码率 → AAC 缓存后流式输出（支持 Range）。
  * 无线 CarPlay 与 NAS 同 WiFi 时，直出 FLAC 易欠载卡顿。
  */
-playRouter.get('/local-smooth', async (req, res) => {
+async function localSmoothHandler(req, res) {
   try {
     const filePath = resolveStreamLocalFile(req)
     if (!filePath) {
@@ -523,7 +554,45 @@ playRouter.get('/local-smooth', async (req, res) => {
       res.status(status).json({ error: formatUserError(e, '流畅播放转码失败') })
     }
   }
-})
+}
+playRouter.get('/local-smooth', localSmoothHandler)
+playRouter.head('/local-smooth', localSmoothHandler)
+
+/** 投屏：转成 MP3（路径带 .mp3，小爱等设备才认） */
+async function localDlnaMp3Handler(req, res) {
+  try {
+    const filePath = resolveStreamLocalFile(req)
+    if (!filePath) return res.status(400).json({ error: '缺少文件路径' })
+    if (!isAllowedMediaPath(filePath, { userId: req.user?.id })) {
+      return res.status(403).json({ error: '无权访问该文件' })
+    }
+    const resolved = path.resolve(mapToContainerPath(filePath) || filePath)
+    const exists = fs.existsSync(resolved) ? resolved : path.resolve(filePath)
+    if (!fs.existsSync(exists)) return res.status(404).json({ error: '本地文件不存在' })
+    const ext = path.extname(exists).toLowerCase()
+    let out = exists
+    let mime = AUDIO_MIME[ext] || 'audio/mpeg'
+    if (ext !== '.mp3') {
+      try {
+        out = await ensureDlnaPlayMp3(exists)
+        mime = 'audio/mpeg'
+      } catch (e) {
+        logPlayError('dlna-mp3', req, e, { filePath: exists, ext })
+      }
+    } else {
+      mime = 'audio/mpeg'
+    }
+    applyRangeOrFull(res, req, out, mime)
+  } catch (e) {
+    logPlayError('dlna-mp3', req, e, { status: 500 })
+    if (!res.headersSent) {
+      const status = /ffmpeg|转码/i.test(String(e?.message || '')) ? 415 : 500
+      res.status(status).json({ error: formatUserError(e, '投屏转码失败') })
+    }
+  }
+}
+playRouter.get('/dlna.mp3', localDlnaMp3Handler)
+playRouter.head('/dlna.mp3', localDlnaMp3Handler)
 
 /** 预热下一首 AAC 缓存，减轻连播首卡 */
 playRouter.post('/smooth-warmup', async (req, res) => {
@@ -543,7 +612,7 @@ playRouter.post('/smooth-warmup', async (req, res) => {
 const MAX_PLAY_PROXIES = 8
 let activePlayProxies = 0
 
-playRouter.get('/proxy', (req, res) => {
+function playProxyHandler(req, res) {
   if (activePlayProxies >= MAX_PLAY_PROXIES) {
     return res.status(503).json({ error: '播放服务繁忙，请稍后重试' })
   }
@@ -584,13 +653,20 @@ playRouter.get('/proxy', (req, res) => {
       return
     }
     const mime = respHeaders['content-type']?.split(';')[0]?.trim() || guessMimeFromUrl(url)
-    res.setHeader('Content-Type', mime)
+    const outMime = /proxy\.mp3/i.test(String(req.originalUrl || req.url || '')) ? 'audio/mpeg' : mime
+    res.setHeader('Content-Type', outMime)
     res.setHeader('Accept-Ranges', 'bytes')
     res.setHeader('Cache-Control', 'private, no-cache')
+    if (wantsDlnaHeaders(req)) applyDlnaStreamHeaders(res, outMime)
     if (respHeaders['content-length']) res.setHeader('Content-Length', respHeaders['content-length'])
     if (statusCode === 206 && respHeaders['content-range']) {
       res.status(206)
       res.setHeader('Content-Range', respHeaders['content-range'])
+    }
+    if (req.method === 'HEAD') {
+      if (!res.headersSent) res.status(statusCode >= 200 && statusCode < 400 ? statusCode : 200)
+      res.end()
+      abortUpstream()
     }
   })
 
@@ -599,8 +675,12 @@ playRouter.get('/proxy', (req, res) => {
     abortUpstream()
   })
 
-  upstream.pipe(res)
-})
+  if (req.method !== 'HEAD') upstream.pipe(res)
+}
+playRouter.get('/proxy', playProxyHandler)
+playRouter.head('/proxy', playProxyHandler)
+playRouter.get('/proxy.mp3', playProxyHandler)
+playRouter.head('/proxy.mp3', playProxyHandler)
 
 playRouter.post('/lyric', async (req, res) => {
   try {

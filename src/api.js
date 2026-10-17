@@ -361,7 +361,7 @@ export const api = {
   },
   podcasts: {
     list: () => request('/podcasts'),
-    subscribe: (url) => request('/podcasts', { method: 'POST', body: { url }, timeout: 45000 }),
+    subscribe: (url) => request('/podcasts', { method: 'POST', body: { url }, timeout: 90000 }),
     get: (id) => request(`/podcasts/${encodeURIComponent(id)}`),
     episodes: (id, params = {}) => {
       const q = new URLSearchParams()
@@ -370,13 +370,14 @@ export const api = {
       const qs = q.toString()
       return request(`/podcasts/${encodeURIComponent(id)}/episodes${qs ? `?${qs}` : ''}`)
     },
-    refresh: (id) => request(`/podcasts/${encodeURIComponent(id)}/refresh`, { method: 'POST', timeout: 45000 }),
+    refresh: (id) => request(`/podcasts/${encodeURIComponent(id)}/refresh`, { method: 'POST', timeout: 90000 }),
     unsubscribe: (id) => request(`/podcasts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   dlna: {
     devices: (refresh = false) => request(`/dlna/devices${refresh ? '?refresh=1' : ''}`, { timeout: 15000 }),
-    play: (body) => request('/dlna/play', { method: 'POST', body, timeout: 45000 }),
+    play: (body) => request('/dlna/play', { method: 'POST', body, timeout: 90000 }),
     stop: (udn) => request('/dlna/stop', { method: 'POST', body: { udn } }),
+    status: (udn) => request(`/dlna/status?udn=${encodeURIComponent(udn)}`, { timeout: 8000 }),
   },
   play: {
     getUrl: (payload, options = {}) => {

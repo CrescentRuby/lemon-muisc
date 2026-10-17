@@ -316,6 +316,12 @@ add('/play/local-ape', 'get', 'APE 转码流（WAV）', {
   parameters: [q('trackId', '库 UUID'), q('path', '路径'), q('ticket', '媒体票')],
   responses: { '200': { description: 'audio/* Range 流' } },
 })
+add('/play/dlna.mp3', 'get', '投屏用本地 MP3 流', {
+  tag: 'play',
+  description: '将本地音频转成 MP3，供 DLNA 音箱读取（路径带 .mp3）',
+  parameters: [q('trackId', '库 UUID'), q('path', '路径'), q('ticket', '媒体票')],
+  responses: { '200': { description: 'audio/mpeg Range 流' } },
+})
 add('/play/local-smooth', 'get', '本地 AAC 流畅转码流', {
   tag: 'play',
   description: '需 ffmpeg；客户端应在用户开启「本地转码」时再请求',
@@ -471,6 +477,7 @@ add('/podcasts/{id}/episodes', 'get', '节目标题分页', { tag: 'podcasts', p
 add('/podcasts/{id}/refresh', 'post', '刷新订阅', { tag: 'podcasts', parameters: [p('id', '订阅 ID')] })
 add('/dlna/devices', 'get', '搜索 DLNA 渲染器', { tag: 'dlna', parameters: [q('refresh', '1=重新 SSDP')] })
 add('/dlna/play', 'post', '投送到设备（本地、播客或在线平台曲目）', { tag: 'dlna', body: {} })
+add('/dlna/status', 'get', '查询投屏播放状态（连播用）', { tag: 'dlna', parameters: [q('udn', '设备 UDN')] })
 add('/dlna/stop', 'post', '停止投屏', { tag: 'dlna', body: {} })
 
 const spec = {

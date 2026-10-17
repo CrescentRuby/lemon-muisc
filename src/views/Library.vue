@@ -272,7 +272,7 @@
           </button>
         </div>
       </div>
-      <div class="album-row">
+      <div ref="albumGridEl" class="album-row">
         <button
           v-for="album in visibleAlbums"
           :key="album.id"
@@ -633,12 +633,15 @@ const pickPlaylistTrack = ref(null)
 const scanSummary = ref('')
 const showAllPlaylistCards = ref(false)
 const playlistGridEl = ref(null)
+const albumGridEl = ref(null)
 const playlistCols = ref(4)
+const albumCols = ref(6)
 const PLAYLIST_GRID_ROWS = 2
+const ALBUM_GRID_ROWS = 2
+const ALBUM_PREVIEW_FETCH = 36
 const playlistPreviewLimit = computed(() => Math.max(PLAYLIST_GRID_ROWS, playlistCols.value * PLAYLIST_GRID_ROWS))
 const playlistSort = ref(localStorage.getItem(PLAYLIST_SORT_KEY) || 'default')
-const albumPreviewLimit = 12
-const albumPreviewLimitMobile = 4
+const albumPreviewLimit = computed(() => Math.max(ALBUM_GRID_ROWS, albumCols.value * ALBUM_GRID_ROWS))
 const albumSort = ref(localStorage.getItem(ALBUM_SORT_KEY) || 'recent')
 const songSort = ref(localStorage.getItem(SONG_SORT_KEY) || 'recent')
 const isNarrow = ref(false)
@@ -648,6 +651,15 @@ let playlistGridRo = null
 function updatePlaylistCols() {
   const w = playlistGridEl.value?.clientWidth || 0
   playlistCols.value = countAutoFillColumns(w, { minSize: 260, gap: 18 })
+}
+
+function updateAlbumCols() {
+  if (isNarrow.value) {
+    albumCols.value = 2
+    return
+  }
+  const w = albumGridEl.value?.clientWidth || 0
+  albumCols.value = countAutoFillColumns(w, { minSize: 156, gap: 18 })
 }
 
 function updateNarrow() {
@@ -690,8 +702,7 @@ const showPlaylistMoreBtn = computed(() => (
 const displayAlbums = computed(() => allAlbums.value)
 const sortedDisplayAlbums = computed(() => displayAlbums.value)
 const visibleAlbums = computed(() => {
-  const limit = isNarrow.value ? albumPreviewLimitMobile : albumPreviewLimit
-  return sortedDisplayAlbums.value.slice(0, limit)
+  return sortedDisplayAlbums.value.slice(0, albumPreviewLimit.value)
 })
 
 const filteredSongs = computed(() => libraryTracks.value)
@@ -747,7 +758,7 @@ async function loadBrowsePreviews() {
       fetchLibraryArtists(api, { page: 1, limit: artistPreviewLimit, sort: 'count' }),
       fetchLibraryAlbums(api, {
         page: 1,
-        limit: Math.max(albumPreviewLimit, albumPreviewLimitMobile),
+        limit: Math.max(ALBUM_PREVIEW_FETCH, albumPreviewLimit.value),
         sort: albumSort.value === 'name' ? 'name' : (albumSort.value === 'artist' ? 'artist' : 'recent'),
       }),
       fetchLibraryGenres(api, { page: 1, limit: genrePreviewLimit, sort: 'count' }),
@@ -778,6 +789,13 @@ watch(albumSort, (value) => {
   try { localStorage.setItem(ALBUM_SORT_KEY, value) } catch {}
   loadBrowsePreviews()
 })
+
+watch(albumGridEl, (el) => {
+  if (el && playlistGridRo) playlistGridRo.observe(el)
+  updateAlbumCols()
+})
+
+watch(isNarrow, () => updateAlbumCols())
 
 watch(libraryBrowseRevision, () => {
   loadBrowsePreviews()
@@ -831,10 +849,15 @@ onMounted(() => {
   updateNarrow()
   narrowMq.addEventListener('change', updateNarrow)
   if (typeof ResizeObserver !== 'undefined') {
-    playlistGridRo = new ResizeObserver(() => updatePlaylistCols())
+    playlistGridRo = new ResizeObserver(() => {
+      updatePlaylistCols()
+      updateAlbumCols()
+    })
     if (playlistGridEl.value) playlistGridRo.observe(playlistGridEl.value)
+    if (albumGridEl.value) playlistGridRo.observe(albumGridEl.value)
   }
   updatePlaylistCols()
+  updateAlbumCols()
   loadLibrarySongColumns(api).catch(() => {})
   hydrateLibrarySnapshot()
   loadScanSummary()
