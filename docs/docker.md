@@ -113,7 +113,7 @@ docker compose pull
 docker compose up -d
 ```
 
-指定版本把 `latest` 改成 `1.2.17.9`。
+指定版本把 `latest` 改成 `1.2.17.10`。
 
 ### 命令行：pull 后改名（compose 仍写官方地址时）
 
