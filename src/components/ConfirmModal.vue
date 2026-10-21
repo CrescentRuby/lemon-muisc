@@ -7,6 +7,7 @@
       @keydown.esc.prevent="!busy && onCancel()"
     >
       <div class="confirm-modal card" role="dialog" :aria-labelledby="titleId" aria-modal="true">
+        <div class="confirm-handle" aria-hidden="true" />
         <div class="confirm-body" :class="{ 'no-cover': !cover }">
           <div v-if="cover" class="confirm-cover-wrap">
             <CoverArt :src="cover" />
@@ -212,34 +213,37 @@ function onCancel() {
 
 @media (max-width: 768px) {
   .confirm-overlay {
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
-    padding-bottom: calc(
-      var(--player-height, 64px) + var(--mobile-nav-height, 56px) + env(safe-area-inset-bottom, 0px) + 12px
-    );
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: 0;
+  }
+  .confirm-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 6px auto 12px;
+    border-radius: 999px;
+    background: var(--border, rgba(127, 127, 127, 0.45));
   }
   .confirm-modal {
-    width: min(300px, calc(100vw - 24px));
-    max-height: min(
-      46dvh,
-      calc(
-        100dvh - var(--player-height, 64px) - var(--mobile-nav-height, 56px) - env(safe-area-inset-bottom, 0px) - 32px
-      )
-    );
-    margin: 0 auto;
-    padding: 12px 14px 14px;
-    border-radius: 12px;
+    width: 100%;
+    max-width: 100%;
+    max-height: min(78dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 24px));
+    margin: 0;
+    padding: 4px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    border-radius: 16px 16px 0 0;
     border: 1px solid var(--border-light);
-    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+    border-bottom: none;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.28);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    animation: confirm-sheet-in 0.24s cubic-bezier(0.22, 0.9, 0.28, 1);
   }
   .confirm-cover-wrap {
-    width: 56px;
-    height: 56px;
-    border-radius: 8px;
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
   }
   .confirm-body {
     flex: 1;
@@ -247,8 +251,8 @@ function onCancel() {
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    margin-bottom: 8px;
-    gap: 6px;
+    margin-bottom: 14px;
+    gap: 12px;
   }
   .confirm-body:not(.no-cover) {
     flex-direction: column;
@@ -261,60 +265,74 @@ function onCancel() {
     text-align: left;
   }
   .confirm-modal h3 {
-    font-size: 15px;
-    margin-bottom: 2px;
-    line-height: 1.3;
+    font-size: 18px;
+    margin-bottom: 8px;
+    line-height: 1.35;
   }
   .confirm-text {
-    font-size: 13px;
-    line-height: 1.45;
+    font-size: 15px;
+    line-height: 1.55;
     margin-bottom: 0;
   }
   .confirm-hint {
-    margin-top: 4px;
-    padding: 6px 8px;
-    border-radius: 6px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
     background: var(--bg-input, color-mix(in srgb, var(--text) 4%, transparent));
     border: 1px solid var(--border-light);
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: 13px;
+    line-height: 1.45;
     color: var(--text-muted);
   }
   .confirm-input-wrap {
-    margin-top: 10px;
+    margin-top: 12px;
   }
   .confirm-input {
     font-size: 16px;
-    padding: 8px 10px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 10px;
   }
   .confirm-actions {
-    flex-direction: row;
+    flex-direction: column-reverse;
     align-items: stretch;
     gap: 8px;
     width: 100%;
-    padding-top: 0;
+    padding-top: 2px;
   }
   .confirm-actions.is-single {
     justify-content: stretch;
   }
   .confirm-actions.is-single .confirm-btn-ok {
-    flex: 1;
+    flex: none;
+    width: 100%;
   }
   .confirm-actions .btn-sm {
-    flex: 1;
-    width: auto;
-    min-height: 36px;
-    padding: 7px 8px;
-    font-size: 13px;
-    font-weight: 500;
+    flex: none;
+    width: 100%;
+    min-height: 44px;
+    padding: 12px 14px;
+    font-size: 16px;
+    font-weight: 600;
     justify-content: center;
+    border-radius: 12px;
   }
   .confirm-actions .confirm-btn-cancel {
-    flex: 0.95;
+    flex: none;
   }
   .confirm-actions .confirm-btn-ok {
-    flex: 1.05;
+    flex: none;
   }
 }
 
+@keyframes confirm-sheet-in {
+  from {
+    transform: translateY(18px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
 </style>

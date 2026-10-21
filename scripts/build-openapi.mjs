@@ -476,9 +476,11 @@ add('/podcasts/{id}', 'delete', '取消订阅', { tag: 'podcasts', parameters: [
 add('/podcasts/{id}/episodes', 'get', '节目标题分页', { tag: 'podcasts', parameters: [p('id', '订阅 ID'), q('page', '页'), q('limit', '每页')] })
 add('/podcasts/{id}/refresh', 'post', '刷新订阅', { tag: 'podcasts', parameters: [p('id', '订阅 ID')] })
 add('/dlna/devices', 'get', '搜索 DLNA 渲染器', { tag: 'dlna', parameters: [q('refresh', '1=重新 SSDP')] })
-add('/dlna/play', 'post', '投送到设备（本地、播客或在线平台曲目）', { tag: 'dlna', body: {} })
+add('/dlna/play', 'post', '投送到设备（本地、播客或在线平台曲目）。可选 queue/index/playMode，服务端持有队列并连播', { tag: 'dlna', body: {} })
 add('/dlna/status', 'get', '查询投屏播放状态（连播用）', { tag: 'dlna', parameters: [q('udn', '设备 UDN')] })
-add('/dlna/stop', 'post', '停止投屏', { tag: 'dlna', body: {} })
+add('/dlna/stop', 'post', '停止投屏并结束服务端连播会话', { tag: 'dlna', body: {} })
+add('/dlna/session', 'get', '当前用户的服务端投屏连播会话', { tag: 'dlna' })
+add('/dlna/session', 'post', '更新投屏队列或播放模式（不重新开播）', { tag: 'dlna', body: {} })
 
 const spec = {
   openapi: '3.1.0',

@@ -143,7 +143,7 @@ async function loadPage(nextPage, append = false) {
 }
 
 function playFrom(index) {
-  startPlayTracks(tracks.value.slice(index), 'podcast').catch((e) => {
+  startPlayTracks(tracks.value.slice(index), 'podcast', { dynamic: false }).catch((e) => {
     showToast(e.message || '播放失败')
   })
 }

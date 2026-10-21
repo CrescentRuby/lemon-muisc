@@ -378,6 +378,8 @@ export const api = {
     play: (body) => request('/dlna/play', { method: 'POST', body, timeout: 90000 }),
     stop: (udn) => request('/dlna/stop', { method: 'POST', body: { udn } }),
     status: (udn) => request(`/dlna/status?udn=${encodeURIComponent(udn)}`, { timeout: 8000 }),
+    session: (body) => request('/dlna/session', { method: 'POST', body, timeout: 20000 }),
+    getSession: () => request('/dlna/session', { timeout: 8000 }),
   },
   play: {
     getUrl: (payload, options = {}) => {

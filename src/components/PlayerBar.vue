@@ -353,7 +353,7 @@
             type="button"
             class="more-item"
             :class="{ active: showMoreDlQuality }"
-            @click="showMoreDlQuality = !showMoreDlQuality"
+            @click="onMoreOpenDownload"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -361,18 +361,6 @@
             </svg>
             <span>下载</span>
           </button>
-          <div v-if="canDownloadCurrent && showMoreDlQuality" class="more-quality" @click.stop>
-            <template v-if="currentQualities.length">
-              <button
-                v-for="q in currentQualities"
-                :key="q"
-                type="button"
-                class="more-quality-option"
-                @click="downloadCurrent(q)"
-              >{{ getQualityDisplay(q, currentPlaying?.types) }}</button>
-            </template>
-            <div v-else class="more-quality-empty">该曲暂无可用音质</div>
-          </div>
           <button
             v-if="currentLocalPath"
             type="button"
@@ -453,6 +441,30 @@
       :sheet="isMobilePlayer || isCompact"
       @close="showSongInfo = false"
     />
+
+    <div
+      v-if="showMoreDlQuality"
+      class="queue-panel dl-quality-panel card"
+      ref="dlQualityPanelRef"
+      @click.stop
+    >
+      <div class="queue-header">
+        <span class="queue-title">选择音质</span>
+        <button class="btn-icon" type="button" @click="showMoreDlQuality = false">×</button>
+      </div>
+      <div class="queue-list" v-if="currentQualities.length">
+        <button
+          v-for="q in currentQualities"
+          :key="q"
+          type="button"
+          class="queue-item dl-quality-item"
+          @click="downloadCurrent(q)"
+        >
+          <span class="queue-name">{{ getQualityDisplay(q, currentPlaying?.types) }}</span>
+        </button>
+      </div>
+      <div v-else class="queue-empty">该曲暂无可用音质</div>
+    </div>
 
     <div class="queue-panel card" v-if="showQueuePanel" ref="queuePanelRef" @click.stop>
       <div class="queue-header">
@@ -567,6 +579,7 @@ import { getQualityDisplay, getQualityLabel } from '../utils/quality.js'
 import { useQualityMenuPosition } from '../utils/qualityMenu.js'
 
 const queuePanelRef = ref(null)
+const dlQualityPanelRef = ref(null)
 const queueBtnRef = ref(null)
 const dlnaPanelRef = ref(null)
 const dlnaBtnRef = ref(null)
@@ -718,8 +731,18 @@ function onToggleQueueFavorite(item, source) {
   toggleFavorite({ ...item, source, localPath: item.localPath })
 }
 
+function onMoreOpenDownload() {
+  showMorePanel.value = false
+  showQueuePanel.value = false
+  showDlnaCast.value = false
+  showSongInfo.value = false
+  closeDownloadMenu()
+  showMoreDlQuality.value = true
+}
+
 function onMoreOpenDlna() {
   showMorePanel.value = false
+  showMoreDlQuality.value = false
   showQueuePanel.value = false
   showSongInfo.value = false
   showDlnaCast.value = true
@@ -730,6 +753,7 @@ function onToggleDlnaCast() {
   if (showDlnaCast.value) {
     showQueuePanel.value = false
     showMorePanel.value = false
+    showMoreDlQuality.value = false
     showSongInfo.value = false
   }
 }
@@ -853,6 +877,10 @@ function onDocumentClick(e) {
   if (showMorePanel.value) {
     if (!moreWrapRef.value?.contains(t)) {
       showMorePanel.value = false
+    }
+  }
+  if (showMoreDlQuality.value) {
+    if (!dlQualityPanelRef.value?.contains(t) && !moreWrapRef.value?.contains(t)) {
       showMoreDlQuality.value = false
     }
   }
@@ -886,6 +914,7 @@ function onToggleQueuePanel() {
   showQueuePanel.value = !showQueuePanel.value
   if (showQueuePanel.value) {
     showMorePanel.value = false
+    showMoreDlQuality.value = false
     showSongInfo.value = false
     showDlnaCast.value = false
   }
@@ -896,14 +925,14 @@ function toggleMorePanel() {
   if (showMorePanel.value) {
     showQueuePanel.value = false
     showDlnaCast.value = false
-    closeDownloadMenu()
-  } else {
     showMoreDlQuality.value = false
+    closeDownloadMenu()
   }
 }
 
 function onMoreOpenQueue() {
   showMorePanel.value = false
+  showMoreDlQuality.value = false
   showSongInfo.value = false
   showDlnaCast.value = false
   showQueuePanel.value = true
@@ -911,6 +940,7 @@ function onMoreOpenQueue() {
 
 function onMoreOpenTagEdit() {
   showMorePanel.value = false
+  showMoreDlQuality.value = false
   onOpenTagEdit()
 }
 
@@ -1723,6 +1753,29 @@ async function onQueuePlayClick(index) {
   cursor: pointer;
 }
 
+.queue-panel.dl-quality-panel {
+  left: 16px;
+  right: auto;
+  width: min(240px, calc(100vw - 32px));
+  animation: dl-quality-in 0.22s ease;
+}
+.dl-quality-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+@keyframes dl-quality-in {
+  from {
+    transform: translateX(-18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 .queue-panel {
   position: absolute;
   bottom: 72px;
@@ -2054,38 +2107,11 @@ async function onQueuePlayClick(index) {
   cursor: default;
 }
 
-.player-bar.compact .more-quality {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 0 4px 4px;
-  padding: 4px;
-  border-radius: var(--radius);
-  background: var(--bg-input);
-}
-
-.player-bar.compact .more-quality-option {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: calc(var(--radius) - 2px);
-  background: transparent;
-  color: var(--text);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.player-bar.compact .more-quality-option:hover {
-  background: var(--bg-hover);
-  color: var(--accent);
-}
-
-.player-bar.compact .more-quality-empty {
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--text-muted);
+.player-bar.compact .queue-panel.dl-quality-panel {
+  left: 12px;
+  right: auto;
+  width: min(240px, calc(100vw - 24px));
+  max-height: min(420px, 70vh);
 }
 
 .player-bar.block-pointer {
@@ -2164,6 +2190,12 @@ async function onQueuePlayClick(index) {
     width: 380px;
     max-width: calc(100vw - 24px);
     max-height: 420px;
+  }
+
+  .player-bar.compact .queue-panel.dl-quality-panel {
+    left: 12px;
+    right: auto;
+    width: min(240px, calc(100vw - 24px));
   }
 
   .player-bar.compact .queue-index {

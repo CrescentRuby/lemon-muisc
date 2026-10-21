@@ -34,7 +34,7 @@
         v-for="feed in feeds"
         :key="feed.id"
         class="feed-row"
-        :class="{ 'is-open': swipeOpenId === feed.id }"
+        :class="{ 'is-open': swipeOpenId === feed.id, 'is-revealing': Number(swipeOffset[feed.id] || 0) > 0.5 }"
       >
         <div class="feed-reveal" aria-hidden="true">
           <button
@@ -386,8 +386,11 @@ onUnmounted(() => {
 .feed-row {
   position: relative;
   overflow: hidden;
+  isolation: isolate;
   border-radius: 12px;
+  background: var(--bg-elevated);
   touch-action: pan-y;
+  transform: translateZ(0);
 }
 .feed-reveal {
   position: absolute;
@@ -395,6 +398,13 @@ onUnmounted(() => {
   width: 152px;
   display: flex;
   z-index: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.feed-row.is-open .feed-reveal,
+.feed-row.is-revealing .feed-reveal {
+  visibility: visible;
+  pointer-events: auto;
 }
 .reveal-btn {
   flex: 1;
@@ -419,6 +429,8 @@ onUnmounted(() => {
   padding: 12px;
   border: 0;
   width: 100%;
+  margin: 0;
+  box-shadow: none;
   color: inherit;
   background: var(--bg-elevated);
   will-change: transform;

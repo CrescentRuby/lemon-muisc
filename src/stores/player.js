@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { api } from '../api.js'
+import { onWS } from '../ws.js'
 import { cleanTrackItem } from '../utils/text.js'
 import { buildPlayPayload } from '../utils/musicPayload.js'
 import { getCachedPlayUrl, setCachedPlayUrl, rememberLoadedPlayUrl, clearCachedPlayUrl } from '../utils/playUrlCache.js'
@@ -1343,6 +1344,7 @@ function bindAudioElementEvents(el) {
     tickPlayStatSession()
     if (uiScrubbing) return
     if (dlnaCastingUdn.value) return
+    if (!audio.paused && isPaused.value) isPaused.value = false
     currentTime.value = audio.currentTime
     // CarPlay / 弱网：勿在 timeupdate 里高频推 Media Session（IPC 过载会卡音）
     // 进度由 setPositionState 的 playbackRate 让系统自行推算，仅在 play/pause/seek/切歌时同步
@@ -1847,6 +1849,7 @@ function saveQueueState({ immediate = false } = {}) {
   saveQueueTimer = setTimeout(() => {
     saveQueueTimer = null
     persistQueueState()
+    scheduleDlnaSessionSync()
   }, 800)
 }
 
@@ -1966,6 +1969,110 @@ let dlnaClockStartedAt = 0
 let dlnaClockFrozenElapsed = 0
 let dlnaClockFrozen = false
 let dlnaEndedOnce = false
+/** 服务端持有队列并切歌；页面关闭后仍能下一首 */
+let dlnaServerOwned = false
+let dlnaSessionSyncTimer = 0
+let applyingServerDlna = false
+
+function slimQueueForDlna() {
+  const all = playQueue.value
+  const idx = currentQueueIndex.value
+  const max = 400
+  let start = 0
+  let list = all
+  if (all.length > max) {
+    start = Math.max(0, idx)
+    list = all.slice(start, start + max)
+  }
+  return {
+    index: Math.max(0, idx - start),
+    queue: list.map((e) => {
+      const item = pickItemFields(e.item, e.key)
+      if (item) {
+        delete item.lyric
+        delete item.ylyric
+      }
+      return { key: e.key, source: e.source, item }
+    }),
+  }
+}
+
+function scheduleDlnaSessionSync() {
+  if (!dlnaCastingUdn.value || applyingServerDlna) return
+  if (dlnaSessionSyncTimer) clearTimeout(dlnaSessionSyncTimer)
+  dlnaSessionSyncTimer = setTimeout(() => {
+    dlnaSessionSyncTimer = 0
+    if (!dlnaCastingUdn.value) return
+    const snap = slimQueueForDlna()
+    api.dlna.session({
+      udn: dlnaCastingUdn.value,
+      queue: snap.queue,
+      playMode: playMode.value,
+      quality: getPlayQuality(),
+    }).catch(() => {})
+  }, 500)
+}
+
+function applyServerNowPlaying(data) {
+  if (!data?.active && !data?.item && !Number.isFinite(Number(data?.index))) return
+  applyingServerDlna = true
+  try {
+    const udn = String(data.udn || dlnaCastingUdn.value || '')
+    if (udn && dlnaCastingUdn.value !== udn) {
+      dlnaCastingUdn.value = udn
+      pauseLocalPlayback()
+      isPaused.value = false
+    }
+    dlnaServerOwned = true
+    const incomingKey = data.key
+      || (data.item ? getTrackKey(data.item, data.source || data.item.source) : '')
+    let idx = -1
+    if (incomingKey) {
+      idx = playQueue.value.findIndex((q) => (
+        q.key === incomingKey || getTrackKey(q.item, q.source) === incomingKey
+      ))
+    }
+    if (idx < 0 && playQueue.value.length === (data.queueLength || -1)) {
+      idx = Number(data.index)
+    }
+    if (idx >= 0 && idx < playQueue.value.length) {
+      currentQueueIndex.value = idx
+      const { item, source } = playQueue.value[idx]
+      currentPlaying.value = cleanTrackItem({ ...item, source: item.source || source })
+    } else if (data.item) {
+      currentPlaying.value = cleanTrackItem({ ...data.item, source: data.source || data.item.source })
+    }
+    if (currentPlaying.value) {
+      setCoverUrl(currentPlaying.value.picUrl || currentPlaying.value.img || '')
+      applyDurationFallback(currentPlaying.value)
+      const trackKey = getTrackKey(currentPlaying.value, currentPlaying.value.source)
+      ensureLyricsForTrack(currentPlaying.value, currentPlaying.value.source, trackKey)
+    }
+    if (Number(data.duration) > 1) duration.value = Number(data.duration)
+    isPaused.value = false
+    pauseLocalPlayback()
+    startDlnaProgressClock()
+    ensureDlnaStatusPoll()
+    saveQueueState()
+    updateMediaSession()
+  } finally {
+    queueMicrotask(() => { applyingServerDlna = false })
+  }
+}
+
+function applyServerQueueEnded() {
+  applyingServerDlna = true
+  try {
+    dlnaServerOwned = false
+    dlnaCastingUdn.value = ''
+    stopDlnaStatusPoll()
+    try { if (audio) audio.muted = false } catch {}
+    isPaused.value = true
+    saveQueueState()
+  } finally {
+    queueMicrotask(() => { applyingServerDlna = false })
+  }
+}
 
 function dlnaTrackDuration() {
   const meta = displayDuration.value || 0
@@ -2011,13 +2118,14 @@ function startDlnaProgressClock() {
     updateActiveLyric(currentTime.value)
     if (dlnaEndedOnce || dlnaClockFrozen) return
     if (dur > 3 && elapsed >= dur + 1.2) {
-      fireDlnaTrackEnded()
+      if (!dlnaServerOwned) fireDlnaTrackEnded()
     }
   }, 400)
 }
 
 function fireDlnaTrackEnded() {
   if (dlnaEndedOnce || !dlnaCastingUdn.value) return
+  if (dlnaServerOwned) return
   dlnaEndedOnce = true
   dlnaIgnoreStopUntil = Date.now() + 10000
   stopDlnaProgressClock()
@@ -2082,7 +2190,7 @@ async function pollDlnaStatus() {
     if (Date.now() < dlnaIgnoreStopUntil) return
     if (!dlnaSeenPlaying) return
     if (state === 'STOPPED' || state === 'NO_MEDIA_PRESENT') {
-      fireDlnaTrackEnded()
+      if (!dlnaServerOwned) fireDlnaTrackEnded()
     }
   } catch {
     /* 设备不回报状态时用本机曲长计时切歌 */
@@ -2099,6 +2207,7 @@ export function setDlnaCasting(udn) {
     startDlnaProgressClock()
     ensureDlnaStatusPoll()
   } else {
+    dlnaServerOwned = false
     stopDlnaStatusPoll()
   }
 }
@@ -2106,6 +2215,7 @@ export function setDlnaCasting(udn) {
 export async function stopDlnaCast() {
   const udn = dlnaCastingUdn.value
   dlnaCastingUdn.value = ''
+  dlnaServerOwned = false
   stopDlnaStatusPoll()
   try { if (audio) audio.muted = false } catch {}
   if (!udn) return
@@ -2126,7 +2236,8 @@ export async function pushPlayingToDlna(udn = dlnaCastingUdn.value) {
   const localPath = currentLocalTrackPath.value
   const trackId = localPath && /^[0-9a-f-]{36}$/i.test(rawId) ? rawId : ''
   const episodeId = t.podcastEpisodeId || (t.source === 'podcast' ? t.id : '')
-  await api.dlna.play({
+  const snap = slimQueueForDlna()
+  const res = await api.dlna.play({
     udn,
     ...buildPlayPayload(t, source, quality),
     trackId: trackId || undefined,
@@ -2135,7 +2246,12 @@ export async function pushPlayingToDlna(udn = dlnaCastingUdn.value) {
     name: t.name,
     singer: t.singer,
     album: t.album || t.albumName,
+    queue: snap.queue,
+    index: snap.index,
+    playMode: playMode.value,
+    quality,
   })
+  dlnaServerOwned = res?.serverOwned !== false
   pauseLocalPlayback()
   isPaused.value = false
   startDlnaProgressClock()
@@ -2602,6 +2718,31 @@ export function initPlayer() {
   })
   window.addEventListener('focus', () => { resumeAudioPlayback() })
   window.addEventListener('pageshow', () => { resumeAudioPlayback() })
+
+  onWS('dlna:now-playing', (data) => {
+    if (!data) return
+    applyServerNowPlaying(data)
+  })
+  onWS('dlna:queue-ended', () => {
+    applyServerQueueEnded()
+  })
+  restoreDlnaSessionFromServer()
+}
+
+async function restoreDlnaSessionFromServer() {
+  try {
+    const s = await api.dlna.getSession()
+    if (!s?.active || !s.udn) return
+    applyServerNowPlaying(s)
+    try {
+      const st = await api.dlna.status(s.udn)
+      const rel = Number(st?.relTime) || 0
+      if (rel > 0.5 && rel < 86400) {
+        dlnaClockStartedAt = Date.now() - rel * 1000
+        currentTime.value = rel
+      }
+    } catch {}
+  } catch {}
 }
 
 let endedHandling = false
@@ -3798,7 +3939,7 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
 
     const cleaned = cleanTrackItem(playItem)
     currentPlaying.value = cleaned
-    isPaused.value = !dlnaCastingUdn.value
+    isPaused.value = false
     const recentSnap = { ...cleaned, source: playSource }
     recordRecentPlay(recentSnap)
     beginPlayStatSession(recentSnap)
@@ -3857,7 +3998,7 @@ export async function playTrackAt(index, { fromHistory = false, resumeTime = 0, 
           syncDurationFromAudio()
           applyDurationFallback(item)
           currentPlaying.value = cleanTrackItem(enrichedItem)
-          isPaused.value = !dlnaCastingUdn.value
+          isPaused.value = false
           const recentSnap = { ...currentPlaying.value, source }
           recordRecentPlay(recentSnap)
           beginPlayStatSession(recentSnap)

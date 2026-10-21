@@ -31,6 +31,9 @@ searchRouter.get('/album', async (req, res) => {
     if (!availableSources(req)[source]) {
       return res.status(400).json({ error: `不支持的搜索源: ${source}` })
     }
+    if (availableSources(req)[source]?.searchable === false) {
+      return res.status(400).json({ error: '该平台由音源脚本提供取链，应用内暂不支持搜索' })
+    }
     const result = await searchLimiter(() => withTimeout(
       searchAlbums(keyword, source, Number(page), Number(limit)),
       SEARCH_TIMEOUT_MS,
@@ -49,6 +52,9 @@ searchRouter.get('/playlist', async (req, res) => {
     if (!availableSources(req)[source]) {
       return res.status(400).json({ error: `不支持的搜索源: ${source}` })
     }
+    if (availableSources(req)[source]?.searchable === false) {
+      return res.status(400).json({ error: '该平台由音源脚本提供取链，应用内暂不支持搜索' })
+    }
     const result = await searchLimiter(() => withTimeout(
       searchPlaylists(keyword, source, Number(page), Number(limit)),
       SEARCH_TIMEOUT_MS,
@@ -66,6 +72,9 @@ searchRouter.get('/album/detail', async (req, res) => {
     if (!id) return res.status(400).json({ error: '缺少专辑 ID' })
     if (!availableSources(req)[source]) {
       return res.status(400).json({ error: `不支持的平台: ${source}` })
+    }
+    if (availableSources(req)[source]?.searchable === false) {
+      return res.status(400).json({ error: '该平台由音源脚本提供取链，应用内暂不支持搜索' })
     }
     const cacheKey = buildAlbumCacheKey(source, id)
     const cached = getCachedAlbum(cacheKey)
@@ -92,6 +101,9 @@ searchRouter.get('/', async (req, res) => {
 
     if (!availableSources(req)[source]) {
       return res.status(400).json({ error: `不支持的搜索源: ${source}` })
+    }
+    if (availableSources(req)[source]?.searchable === false) {
+      return res.status(400).json({ error: '该平台由音源脚本提供取链，应用内暂不支持搜索' })
     }
 
     const result = await searchLimiter(() => withTimeout(

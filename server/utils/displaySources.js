@@ -1,18 +1,22 @@
 import { AVAILABLE_SOURCES } from '../musicSdk.js'
-import { getMergedSources, hasActiveSource } from '../sourceManager.js'
+import { getMergedSources, hasActiveSource, getActiveSources } from '../sourceManager.js'
 import { getStoredActiveSourceIds } from './activeSources.js'
 import { getEnabledPlatforms, isSourcePlatformEnabled } from './enabledPlatforms.js'
-import { getActiveSources } from '../sourceManager.js'
+import { platformDisplayName } from './platformCatalog.js'
 
 function resolveSourceDisplayName(key, scriptName) {
-  const fallback = AVAILABLE_SOURCES[key]?.name || key
+  const fallback = AVAILABLE_SOURCES[key]?.name || platformDisplayName(key)
   const custom = String(scriptName || '').trim()
   if (!custom || custom === key) return fallback
   return custom
 }
 
 function allAvailableSources() {
-  return { ...AVAILABLE_SOURCES }
+  const base = {}
+  for (const [key, info] of Object.entries(AVAILABLE_SOURCES)) {
+    base[key] = { ...info, searchable: true }
+  }
+  return base
 }
 
 function filterByEnabledPlatforms(sources, userId) {
@@ -25,6 +29,17 @@ function filterByEnabledPlatforms(sources, userId) {
   return result
 }
 
+function toDisplayEntry(key, info = {}) {
+  const builtin = AVAILABLE_SOURCES[key]
+  return {
+    ...(builtin || { name: platformDisplayName(key, info), key }),
+    name: resolveSourceDisplayName(key, info.name),
+    qualitys: info.qualitys || [],
+    actions: info.actions || [],
+    searchable: Boolean(builtin), // 汽水/B站等无内置搜索 SDK，仅用于脚本取链
+  }
+}
+
 /** 按用户平台开关裁剪合并后的音源能力 */
 export function getMergedSourcesForUser(userId, allowedSourceIds = null) {
   const allow = Array.isArray(allowedSourceIds)
@@ -34,7 +49,6 @@ export function getMergedSourcesForUser(userId, allowedSourceIds = null) {
   for (const entry of getActiveSources()) {
     if (allow && !allow.has(entry.id)) continue
     for (const [key, info] of Object.entries(entry.sources || {})) {
-      if (!AVAILABLE_SOURCES[key]) continue
       if (userId && !isSourcePlatformEnabled(userId, entry.id, key)) continue
       if (!merged[key]) {
         merged[key] = {
@@ -68,22 +82,21 @@ export function getDisplaySources(userId = null) {
     const merged = userId
       ? getMergedSourcesForUser(userId, allowedIds)
       : getMergedSources(allowedIds)
-    const keys = Object.keys(merged).filter((key) => AVAILABLE_SOURCES[key])
+    const keys = Object.keys(merged)
     if (!keys.length) {
-      // 全部平台被关掉时返回空，搜索 Tab 为空；避免误显示已关闭平台
       return {}
     }
     base = {}
     for (const key of keys) {
-      const info = merged[key] || {}
-      base[key] = {
-        ...AVAILABLE_SOURCES[key],
-        name: resolveSourceDisplayName(key, info.name),
-        qualitys: info.qualitys || [],
-        actions: info.actions || [],
-      }
+      base[key] = toDisplayEntry(key, merged[key] || {})
     }
   }
 
-  return filterByEnabledPlatforms(base, userId)
+  const enabled = filterByEnabledPlatforms(base, userId)
+  const searchable = {}
+  for (const [key, info] of Object.entries(enabled || {})) {
+    if (info?.searchable === false) continue
+    searchable[key] = info
+  }
+  return searchable
 }

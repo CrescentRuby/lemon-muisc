@@ -7,7 +7,7 @@
         class="fs-player"
         :class="{
           'mobile-screen-expanded': isScreenExpanded,
-          'fs-has-sheet': showQueuePanel || showTagEditModal,
+          'fs-has-sheet': showQueuePanel || showTagEditModal || moreDownloadOpen,
           'fs-chrome-hidden': chromeHidden,
         }"
         @click.self="closeFullscreenPlayer"
@@ -338,19 +338,6 @@
                   class="fs-more-item"
                   @click="onMoreDownload"
                 >下载</button>
-                <div v-if="moreDownloadOpen" class="fs-more-qualities" data-fs-dl>
-                  <div class="quality-menu-title">选择音质</div>
-                  <template v-if="currentQualities.length">
-                    <button
-                      v-for="q in currentQualities"
-                      :key="q"
-                      type="button"
-                      class="quality-option"
-                      @click="downloadCurrent(q)"
-                    >{{ getQualityDisplay(q, currentPlaying?.types) }}</button>
-                  </template>
-                  <div v-else class="quality-empty">该曲暂无可用音质（音源未返回）</div>
-                </div>
               </div>
             </div>
 
@@ -386,6 +373,25 @@
               />
               <span class="fs-vol-pct">{{ isMuted ? 0 : volumePercent }}%</span>
             </div>
+          </div>
+        </div>
+
+        <div v-if="moreDownloadOpen" class="fs-dl-sheet-mask" @click="moreDownloadOpen = false">
+          <div class="fs-dl-sheet" data-fs-dl @click.stop>
+            <div class="fs-dl-sheet-header">
+              <span>选择音质</span>
+              <button class="fs-queue-close" type="button" @click="moreDownloadOpen = false">×</button>
+            </div>
+            <template v-if="currentQualities.length">
+              <button
+                v-for="q in currentQualities"
+                :key="q"
+                type="button"
+                class="quality-option"
+                @click="downloadCurrent(q)"
+              >{{ getQualityDisplay(q, currentPlaying?.types) }}</button>
+            </template>
+            <div v-else class="quality-empty">该曲暂无可用音质（音源未返回）</div>
           </div>
         </div>
 
@@ -818,7 +824,8 @@ function onMorePickPlaylist() {
 }
 
 function onMoreDownload() {
-  moreDownloadOpen.value = !moreDownloadOpen.value
+  moreMenuOpen.value = false
+  moreDownloadOpen.value = true
 }
 
 function toggleDownloadMenu(event) {
@@ -1115,6 +1122,10 @@ function onKeydown(e) {
     }
     if (isNativeFullscreen.value) {
       exitNativeFullscreen()
+      return
+    }
+    if (moreDownloadOpen.value) {
+      moreDownloadOpen.value = false
       return
     }
     if (showQueuePanel.value) {
@@ -1879,10 +1890,37 @@ watch(currentPlaying, () => {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.fs-more-qualities {
-  margin: 2px 8px 8px;
-  padding: 4px 0 2px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+.fs-dl-sheet-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  background: rgba(0, 0, 0, 0.45);
+}
+.fs-dl-sheet {
+  width: min(260px, 78vw);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 12px 0 calc(16px + env(safe-area-inset-bottom, 0px));
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 20, 28, 0.97);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.4);
+  animation: fs-dl-sheet-in 0.22s ease;
+}
+.fs-dl-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+@keyframes fs-dl-sheet-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
 }
 .quality-menu {
   background: rgba(20, 22, 30, 0.96);

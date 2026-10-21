@@ -741,6 +741,7 @@
                     type="button"
                     class="source-expand-btn"
                     :class="{ expanded: expandedSourceId === s.id }"
+                    :data-source-plat="s.id"
                     :aria-expanded="expandedSourceId === s.id"
                     :title="expandedSourceId === s.id ? '收起平台开关' : '展开平台开关'"
                     @click.stop="toggleSourcePlatformPanel(s.id)"
@@ -782,48 +783,6 @@
                   :disabled="sourceBusyId === s.id || importingUrl || importingFiles"
                   @click="removeSource(s.id)"
                 >删除</button>
-              </div>
-            </div>
-            <div
-              v-if="expandedSourceId === s.id"
-              class="source-platform-popover"
-              role="dialog"
-              :aria-label="`${s.name} 平台开关`"
-              @click.stop
-            >
-              <div class="platform-popover-head">
-                <div class="platform-popover-title-row">
-                  <div class="platform-popover-title">平台解析</div>
-                  <div class="platform-switch-actions">
-                    <button type="button" class="plat-link plat-link-on" @click="setSourcePlatformsAll(s, true)">全启用</button>
-                    <button type="button" class="plat-link plat-link-off" @click="setSourcePlatformsAll(s, false)">全关闭</button>
-                  </div>
-                </div>
-                <p class="platform-switch-tip">关闭后，该音源不再解析对应平台歌曲（仅对本账号生效）。</p>
-              </div>
-              <div class="platform-switch-list">
-                <div v-for="p in platformOptionsForSource(s)" :key="p.id" class="platform-switch-item">
-                  <div class="platform-switch-left">
-                    <span class="platform-badge" :class="`plat-${p.id}`">{{ p.short }}</span>
-                    <div class="platform-switch-meta">
-                      <div class="platform-switch-name">
-                        {{ p.label }}
-                        <span class="platform-code">{{ p.id }}</span>
-                      </div>
-                      <div class="platform-switch-status" :class="{ on: isSourcePlatformOn(s.id, p.id), auto: isAutoClosedPlatform(s, p.id) }">
-                        {{ platformSwitchStatus(s, p.id) }}
-                      </div>
-                    </div>
-                  </div>
-                  <label class="toggle">
-                    <input
-                      type="checkbox"
-                      :checked="isSourcePlatformOn(s.id, p.id)"
-                      @change="toggleSourcePlatform(s, p.id, $event.target.checked)"
-                    />
-                    <span class="slider"></span>
-                  </label>
-                </div>
               </div>
             </div>
           </div>
@@ -1379,6 +1338,52 @@
       </div>
     </div>
 
+    <Teleport to="body">
+      <div
+        v-if="expandedSource"
+        class="source-platform-popover"
+        role="dialog"
+        :aria-label="`${expandedSource.name} 平台开关`"
+        :style="platformPopoverStyle"
+        @click.stop
+      >
+        <div class="platform-popover-head">
+          <div class="platform-popover-title-row">
+            <div class="platform-popover-title">平台解析</div>
+            <div class="platform-switch-actions">
+              <button type="button" class="plat-link plat-link-on" @click="setSourcePlatformsAll(expandedSource, true)">全启用</button>
+              <button type="button" class="plat-link plat-link-off" @click="setSourcePlatformsAll(expandedSource, false)">全关闭</button>
+            </div>
+          </div>
+          <p class="platform-switch-tip">关闭后，该音源不再解析对应平台歌曲（仅对本账号生效）。</p>
+        </div>
+        <div class="platform-switch-list">
+          <div v-for="p in platformOptionsForSource(expandedSource)" :key="p.id" class="platform-switch-item">
+            <div class="platform-switch-left">
+              <span class="platform-badge" :class="`plat-${p.id}`">{{ p.short }}</span>
+              <div class="platform-switch-meta">
+                <div class="platform-switch-name">
+                  {{ p.label }}
+                  <span class="platform-code">{{ p.id }}</span>
+                </div>
+                <div class="platform-switch-status" :class="{ on: isSourcePlatformOn(expandedSource.id, p.id), auto: isAutoClosedPlatform(expandedSource, p.id) }">
+                  {{ platformSwitchStatus(expandedSource, p.id) }}
+                </div>
+              </div>
+            </div>
+            <label class="toggle">
+              <input
+                type="checkbox"
+                :checked="isSourcePlatformOn(expandedSource.id, p.id)"
+                @change="toggleSourcePlatform(expandedSource, p.id, $event.target.checked)"
+              />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 删除用户确认 -->
     <div v-if="deleteConfirmUser" class="modal-overlay" @click.self="deleteConfirmUser = null">
       <div class="modal-card">
@@ -1443,6 +1448,7 @@ import {
   parseSourcePlatformMap,
   serializeSourcePlatformMap,
   platformsOfSource,
+  orderPlatformKeys,
 } from '../utils/platforms.js'
 
 const route = useRoute()
@@ -1572,10 +1578,15 @@ const outdatedSourceCount = computed(() =>
 /** 正在激活/停用的音源 id，避免无反馈空等像卡死 */
 const sourceBusyId = ref('')
 const exportingSourceId = ref('')
-const PLATFORM_SHORT = { tx: 'QQ', wy: '云', kw: '酷', kg: '狗', mg: '咪' }
+const PLATFORM_SHORT = {
+  tx: 'QQ', wy: '云', kw: '酷', kg: '狗', mg: '咪',
+  qs: '汽', bili: 'B', ytb: 'YT', xm: '喜',
+}
 /** @type {import('vue').Ref<Record<string, string[]>>} */
 const sourcePlatformMap = ref({})
 const expandedSourceId = ref('')
+const platformPopoverStyle = ref({})
+const expandedSource = computed(() => sourceList.value.find((row) => row.id === expandedSourceId.value) || null)
 const settingsPageRef = ref(null)
 const settingsPanelRef = ref(null)
 const settingsNavRef = ref(null)
@@ -1956,6 +1967,7 @@ watch(tabs, (list) => {
 }, { immediate: true })
 
 watch(activeTab, async (tab) => {
+  closeSourcePlatformPanel()
   if (tab === 'paths' && musicPaths.value.length) {
     loadLibraryStats()
     await loadScanSettings()
@@ -2421,14 +2433,21 @@ onMounted(async () => {
   } catch {}
   // 音源列表就绪后再同步，便于把旧版全局平台开关摊到各音源
   const hadGlobalPlatforms = Array.isArray(parseSourcePlatformMap(settings[ENABLED_PLATFORMS_KEY]).__global__)
+  const platformsBefore = settings[ENABLED_PLATFORMS_KEY]
   syncEnabledPlatformsFromSettings()
-  if (hadGlobalPlatforms && sourceList.value.length && !sourcePlatformMap.value.__global__) {
+  if (
+    !sourcePlatformMap.value.__global__
+    && sourceList.value.length
+    && (hadGlobalPlatforms || settings[ENABLED_PLATFORMS_KEY] !== platformsBefore)
+  ) {
     persistEnabledPlatforms().catch(() => {})
   }
   await loadPaths()
   if (isAdminUser.value) loadFfmpegStatus()
   document.addEventListener('click', onSourcePlatformDocClick)
   document.addEventListener('keydown', onSourcePlatformKeydown)
+  window.addEventListener('resize', onPlatformPopoverReposition)
+  window.addEventListener('scroll', onPlatformPopoverScroll, true)
 })
 
 onActivated(() => {
@@ -2442,6 +2461,8 @@ onUnmounted(() => {
   if (platformSaveTimer) clearTimeout(platformSaveTimer)
   document.removeEventListener('click', onSourcePlatformDocClick)
   document.removeEventListener('keydown', onSourcePlatformKeydown)
+  window.removeEventListener('resize', onPlatformPopoverReposition)
+  window.removeEventListener('scroll', onPlatformPopoverScroll, true)
 })
 
 async function applyFfmpegStatus(res) {
@@ -3427,11 +3448,36 @@ function syncEnabledPlatformsFromSettings() {
     }
     delete map.__global__
   }
-  sourcePlatformMap.value = map
+  sourcePlatformMap.value = mergeDeclaredPlatformsIntoMap(map)
   // 仍有 __global__ 时先不覆盖 settings，避免列表加载前把旧配置冲掉
-  if (!map.__global__) {
-    settings[ENABLED_PLATFORMS_KEY] = serializeSourcePlatformMap(map)
+  if (!sourcePlatformMap.value.__global__) {
+    settings[ENABLED_PLATFORMS_KEY] = serializeSourcePlatformMap(sourcePlatformMap.value)
   }
+}
+
+/** 脚本新声明的非内置平台（汽水/B站等）默认打开；内置五家仍尊重用户已保存开关 */
+function mergeDeclaredPlatformsIntoMap(map) {
+  const next = { ...map }
+  for (const s of sourceList.value) {
+    if (!s?.id) continue
+    const declared = platformsOfSource(s)
+    const extra = declared.filter((k) => !PLATFORM_ORDER.includes(k))
+    if (!extra.length) continue
+    if (!Object.prototype.hasOwnProperty.call(next, s.id)) {
+      next[s.id] = [...declared]
+      continue
+    }
+    const cur = new Set(next[s.id] || [])
+    let changed = false
+    for (const k of extra) {
+      if (!cur.has(k)) {
+        cur.add(k)
+        changed = true
+      }
+    }
+    if (changed) next[s.id] = orderPlatformKeys([...cur])
+  }
+  return next
 }
 
 function ensureSourcePlatformEntry(source) {
@@ -3504,14 +3550,58 @@ function sourcePlatformSummary(source) {
 
 function closeSourcePlatformPanel() {
   expandedSourceId.value = ''
+  platformPopoverStyle.value = {}
+}
+
+function placePlatformPopover() {
+  const id = expandedSourceId.value
+  if (!id) return
+  const btn = document.querySelector(`[data-source-plat="${CSS.escape(id)}"]`)
+  if (!btn) return
+  const r = btn.getBoundingClientRect()
+  const mobile = window.innerWidth <= 768
+  const width = mobile
+    ? Math.min(260, window.innerWidth - 28)
+    : Math.min(360, Math.max(280, window.innerWidth - 16))
+  let left = r.right - width
+  if (left < 8) left = 8
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8)
+  const maxH = mobile
+    ? Math.min(280, window.innerHeight * 0.46)
+    : Math.min(420, window.innerHeight * 0.7)
+  let top = r.bottom + 6
+  if (top + 160 > window.innerHeight) {
+    top = Math.max(8, r.top - 6 - Math.min(maxH, window.innerHeight - 16))
+  }
+  platformPopoverStyle.value = {
+    position: 'fixed',
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+    width: `${Math.round(width)}px`,
+    maxHeight: `${Math.round(maxH)}px`,
+    zIndex: 12050,
+  }
 }
 
 function toggleSourcePlatformPanel(sourceId) {
   expandedSourceId.value = expandedSourceId.value === sourceId ? '' : sourceId
-  if (expandedSourceId.value) {
-    const s = sourceList.value.find((row) => row.id === sourceId)
-    if (s) ensureSourcePlatformEntry(s)
+  if (!expandedSourceId.value) {
+    platformPopoverStyle.value = {}
+    return
   }
+  const s = sourceList.value.find((row) => row.id === sourceId)
+  if (s) ensureSourcePlatformEntry(s)
+  nextTick(() => placePlatformPopover())
+}
+
+function onPlatformPopoverReposition() {
+  if (expandedSourceId.value) placePlatformPopover()
+}
+
+function onPlatformPopoverScroll(event) {
+  if (!expandedSourceId.value) return
+  if (event.target?.closest?.('.source-platform-popover')) return
+  closeSourcePlatformPanel()
 }
 
 function onSourcePlatformDocClick(event) {
@@ -3557,7 +3647,7 @@ function toggleSourcePlatform(source, platformId, on) {
   else next.delete(platformId)
   sourcePlatformMap.value = {
     ...sourcePlatformMap.value,
-    [id]: PLATFORM_ORDER.filter((k) => next.has(k)),
+    [id]: orderPlatformKeys([...next]),
   }
   if (on) clearLocalAutoClosed(id, [platformId])
   schedulePersistEnabledPlatforms()
@@ -3584,10 +3674,13 @@ async function activateSource(id) {
     } else if (!activeSourceIds.value.includes(id)) {
       activeSourceIds.value = [...activeSourceIds.value, id]
     }
-    sourceList.value = sourceList.value.map(s => ({
-      ...s,
-      active: activeSourceIds.value.includes(s.id),
-    }))
+    sourceList.value = sourceList.value.map((s) => (
+      s.id === id
+        ? { ...s, active: true, sources: res.sources || s.sources }
+        : { ...s, active: activeSourceIds.value.includes(s.id) }
+    ))
+    sourcePlatformMap.value = mergeDeclaredPlatformsIntoMap(sourcePlatformMap.value)
+    schedulePersistEnabledPlatforms()
     showToast('音源已激活', 'success')
     await refreshPlatformTabs()
   } catch (e) {
@@ -4267,27 +4360,30 @@ function showToast(text, type = 'info') {
   z-index: 2;
 }
 .source-platform-wrap.open {
-  z-index: 50;
+  z-index: 80;
 }
 .source-platform-popover {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  box-sizing: border-box;
-  max-height: min(420px, 60vh);
+  position: fixed;
+  z-index: 12050;
   overflow: auto;
-  margin-top: 12px;
+  margin: 0;
   padding: 12px 14px;
+  box-sizing: border-box;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-elevated, var(--bg-card, var(--bg)));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
   -webkit-overflow-scrolling: touch;
+  animation: source-plat-drop 0.16s ease;
 }
-@media (min-width: 769px) {
-  .source-platform-popover {
-    max-width: 420px;
-    margin-left: auto;
+@keyframes source-plat-drop {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 .platform-popover-head {
@@ -4814,30 +4910,49 @@ function showToast(text, type = 'info') {
   .path-manual { flex-direction: column; }
   .source-item-main { flex-direction: column; align-items: flex-start; gap: 10px; }
   .source-actions { width: 100%; }
-  .source-platform-wrap { margin-left: auto; }
+  .source-platform-wrap {
+    margin-left: auto;
+  }
   .source-platform-popover {
-    margin-top: 10px;
-    padding: 10px 12px;
-    max-height: min(360px, 50vh);
+    padding: 8px 8px 10px;
+  }
+  .platform-popover-head {
+    margin-bottom: 8px;
+  }
+  .platform-popover-title {
+    font-size: 13px;
   }
   .platform-popover-title-row {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    margin-bottom: 4px;
   }
   .platform-popover-title-row .platform-switch-actions {
     margin-left: auto;
   }
+  .plat-link {
+    font-size: 12px;
+  }
   .platform-switch-tip {
-    font-size: 11px;
-    line-height: 1.4;
+    display: none;
+  }
+  .platform-switch-list {
+    gap: 6px;
   }
   .platform-switch-item {
-    padding: 8px 10px;
-    gap: 10px;
+    padding: 6px 8px;
+    gap: 8px;
+    border-radius: 8px;
+  }
+  .platform-switch-name {
+    font-size: 13px;
+  }
+  .platform-switch-status {
+    font-size: 11px;
   }
   .platform-badge {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     font-size: 11px;
     border-radius: 8px;
   }

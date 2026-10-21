@@ -2,16 +2,33 @@ import { AVAILABLE_SOURCES } from '../musicSdk.js'
 import { getMergedSettings, setUserSettings } from './userSettings.js'
 import { getStoredActiveSourceIds } from './activeSources.js'
 import { getActiveSources } from '../sourceManager.js'
+import {
+  CORE_PLATFORM_ORDER,
+  isValidPlatformKey,
+  orderPlatformKeys,
+  platformDisplayName,
+} from './platformCatalog.js'
 
 export const ENABLED_PLATFORMS_KEY = 'source.enabledPlatforms'
 export const AUTO_CLOSED_KEY = 'source.autoClosedPlatforms'
 export const AUTO_CLOSE_SKIP_KEY = 'source.previewAutoCloseSkip'
 
-/** 固定顺序，与设置页展示一致 */
-export const PLATFORM_ORDER = ['tx', 'wy', 'kw', 'kg', 'mg']
+/** 内置五家顺序；完整列表见 allPlatformKeys() */
+export const PLATFORM_ORDER = CORE_PLATFORM_ORDER
+
+function declaredKeysFromActiveSources() {
+  const keys = []
+  try {
+    for (const entry of getActiveSources()) {
+      for (const k of Object.keys(entry?.sources || {})) keys.push(k)
+    }
+  } catch {}
+  return keys
+}
 
 export function allPlatformKeys() {
-  return PLATFORM_ORDER.filter((k) => AVAILABLE_SOURCES[k])
+  const core = CORE_PLATFORM_ORDER.filter((k) => AVAILABLE_SOURCES[k])
+  return orderPlatformKeys([...core, ...declaredKeysFromActiveSources()])
 }
 
 function parseJson(raw, fallback) {
@@ -27,12 +44,10 @@ function parseJson(raw, fallback) {
 /** @returns {Record<string, string[]>} sourceId → enabled platforms */
 export function parseSourcePlatformMap(raw) {
   const data = parseJson(raw, null)
-  const all = allPlatformKeys()
-  const allow = new Set(all)
 
   // 兼容旧版全局数组 ["tx","wy"]
   if (Array.isArray(data)) {
-    const global = [...new Set(data.map(String).filter((k) => allow.has(k)))]
+    const global = orderPlatformKeys(data.map(String).filter((k) => isValidPlatformKey(k)))
     return { __global__: global }
   }
   if (!data || typeof data !== 'object') return {}
@@ -41,7 +56,7 @@ export function parseSourcePlatformMap(raw) {
   for (const [id, list] of Object.entries(data)) {
     if (!id || id === '__global__') continue
     if (!Array.isArray(list)) continue
-    out[String(id)] = [...new Set(list.map(String).filter((k) => allow.has(k)))]
+    out[String(id)] = orderPlatformKeys(list.map(String).filter((k) => isValidPlatformKey(k)))
   }
   return out
 }
@@ -61,8 +76,8 @@ export function platformsDeclaredBySource(sourceId) {
   const all = allPlatformKeys()
   try {
     const entry = getActiveSources().find((s) => s.id === sourceId)
-    const keys = Object.keys(entry?.sources || {}).filter((k) => AVAILABLE_SOURCES[k])
-    if (keys.length) return PLATFORM_ORDER.filter((k) => keys.includes(k))
+    const keys = Object.keys(entry?.sources || {}).filter((k) => isValidPlatformKey(k))
+    if (keys.length) return orderPlatformKeys(keys)
   } catch {}
   return [...all]
 }
@@ -73,8 +88,8 @@ export function platformsDeclaredBySource(sourceId) {
  */
 export function isSourcePlatformEnabled(userId, sourceId, platform) {
   const key = String(platform || '').trim()
-  if (!key || key === 'local') return true
-  if (!AVAILABLE_SOURCES[key]) return true
+  if (!key || key === 'local' || key === 'podcast') return true
+  if (!isValidPlatformKey(key)) return true
   const sid = String(sourceId || '').trim()
   if (!sid || !userId) return true
 
@@ -86,7 +101,7 @@ export function isSourcePlatformEnabled(userId, sourceId, platform) {
   if (Object.prototype.hasOwnProperty.call(map, '__global__')) {
     return map.__global__.includes(key)
   }
-  return platformsDeclaredBySource(sid).includes(key) || allPlatformKeys().includes(key)
+  return platformsDeclaredBySource(sid).includes(key)
 }
 
 /** 当前用户「至少有一个激活音源允许」的平台并集 */
@@ -105,23 +120,21 @@ export function getEnabledPlatforms(userId = null) {
     else list = platformsDeclaredBySource(id)
     for (const p of list) enabled.add(p)
   }
-  return PLATFORM_ORDER.filter((k) => enabled.has(k))
+  return orderPlatformKeys([...enabled])
 }
 
 export function isPlatformEnabled(userId, platform) {
   const key = String(platform || '').trim()
-  if (!key || key === 'local') return true
-  if (!AVAILABLE_SOURCES[key]) return true
+  if (!key || key === 'local' || key === 'podcast') return true
+  if (!isValidPlatformKey(key)) return true
   return getEnabledPlatforms(userId).includes(key)
 }
 
 export function serializeSourcePlatformMap(map) {
-  const allow = new Set(allPlatformKeys())
   const out = {}
   for (const [id, list] of Object.entries(map || {})) {
     if (!id || id === '__global__') continue
-    const ordered = PLATFORM_ORDER.filter((k) => allow.has(k) && (list || []).includes(k))
-    out[id] = ordered
+    out[id] = orderPlatformKeys((list || []).filter((k) => isValidPlatformKey(k)))
   }
   return JSON.stringify(out)
 }
@@ -129,13 +142,12 @@ export function serializeSourcePlatformMap(map) {
 function parseAutoClosedMap(raw) {
   const data = parseJson(raw, null)
   if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
-  const allow = new Set(allPlatformKeys())
   const out = {}
   for (const [sid, plats] of Object.entries(data)) {
     if (!sid || !plats || typeof plats !== 'object') continue
     const src = {}
     for (const [plat, info] of Object.entries(plats)) {
-      if (!allow.has(plat) || !info || typeof info !== 'object') continue
+      if (!isValidPlatformKey(plat) || !info || typeof info !== 'object') continue
       src[plat] = {
         at: String(info.at || ''),
         label: String(info.label || plat),
@@ -150,11 +162,10 @@ function parseAutoClosedMap(raw) {
 function parseSkipMap(raw) {
   const data = parseJson(raw, null)
   if (!data || typeof data !== 'object') return {}
-  const allow = new Set(allPlatformKeys())
   const out = {}
   for (const [sid, list] of Object.entries(data)) {
     if (!sid || !Array.isArray(list)) continue
-    out[sid] = [...new Set(list.map(String).filter((k) => allow.has(k)))]
+    out[sid] = orderPlatformKeys(list.map(String).filter((k) => isValidPlatformKey(k)))
   }
   return out
 }
@@ -192,7 +203,7 @@ export function applyPreviewAutoClose(userId, sourceId, platform, label = '') {
   const uid = userId || null
   const sid = String(sourceId || '').trim()
   const plat = String(platform || '').trim()
-  if (!uid || !sid || !plat || !AVAILABLE_SOURCES[plat]) return { closed: false }
+  if (!uid || !sid || !plat || !isValidPlatformKey(plat)) return { closed: false }
 
   const skip = new Set(getSkipMap(uid)[sid] || [])
   if (skip.has(plat)) return { closed: false }
@@ -211,7 +222,7 @@ export function applyPreviewAutoClose(userId, sourceId, platform, label = '') {
     ...(notices[sid] || {}),
     [plat]: {
       at: new Date().toISOString(),
-      label: label || AVAILABLE_SOURCES[plat]?.name || plat,
+      label: label || platformDisplayName(plat) || plat,
       dismissed: false,
     },
   }

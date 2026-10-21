@@ -3,6 +3,7 @@ import {
   applyPreviewAutoClose,
   clearPreviewAutoCloseSkip,
 } from './enabledPlatforms.js'
+import { platformDisplayName } from './platformCatalog.js'
 
 const HEALTH_KEY = 'source.health'
 const WINDOW = 20
@@ -17,6 +18,10 @@ const PLATFORM_LABELS = {
   tx: 'QQ音乐',
   wy: '网易云',
   mg: '咪咕',
+  qs: '汽水',
+  bili: 'B站',
+  ytb: 'YouTube',
+  xm: '喜马拉雅',
 }
 
 function readAll() {
@@ -62,7 +67,7 @@ function normalizePlatform(platform) {
 }
 
 function platformLabel(key) {
-  return PLATFORM_LABELS[key] || key
+  return PLATFORM_LABELS[key] || platformDisplayName(key)
 }
 
 function summarizeOutcomes(outcomes) {

@@ -14,6 +14,7 @@ import { formatUserError } from './utils/userError.js'
 import { assertMusicUrl } from './utils/sourceResult.js'
 import { getSourceHealth } from './utils/sourceHealth.js'
 import { isSourcePlatformEnabled } from './utils/enabledPlatforms.js'
+import { isValidPlatformKey } from './utils/platformCatalog.js'
 
 /** @type {Map<string, { id: string, handler: Function|null, sources: object, pendingRequests: Map }>} */
 const activeSources = new Map()
@@ -34,7 +35,6 @@ export function listSourceUpdateAlerts() {
   return [...sourceUpdateAlerts.entries()].map(([id, info]) => ({ id, ...info }))
 }
 
-const SUPPORTED_SOURCES = ['kw', 'kg', 'tx', 'wy', 'mg']
 const SUPPORTED_ACTIONS = ['musicUrl', 'lyric', 'pic']
 const SUPPORTED_QUALITYS = ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master']
 
@@ -262,7 +262,7 @@ export async function loadSource(id, script) {
           if (isCeruNativePlugin(exported)) {
             sources = validateSources(normalizeCeruSources(exported))
             if (!Object.keys(sources).length) {
-              finish(new Error('澜音音源未声明支持的平台（kw/kg/tx/wy/mg）'))
+              finish(new Error('澜音音源未声明任何有效平台'))
               return
             }
             requestHandler = createCeruHandler(exported)
@@ -658,13 +658,13 @@ export async function requestSource(source, action, info, options = {}) {
 
 function validateSources(raw) {
   const result = {}
-  for (const [key, info] of Object.entries(raw)) {
-    if (!SUPPORTED_SOURCES.includes(key)) continue
+  for (const [key, info] of Object.entries(raw || {})) {
+    if (!isValidPlatformKey(key)) continue
     result[key] = {
-      name: info.name || key,
-      type: info.type || 'music',
-      actions: (info.actions || []).filter(a => SUPPORTED_ACTIONS.includes(a)),
-      qualitys: (info.qualitys || []).filter(q => SUPPORTED_QUALITYS.includes(q)),
+      name: info?.name || key,
+      type: info?.type || 'music',
+      actions: (info?.actions || []).filter((a) => SUPPORTED_ACTIONS.includes(a)),
+      qualitys: (info?.qualitys || []).filter((q) => SUPPORTED_QUALITYS.includes(q)),
     }
   }
   return result

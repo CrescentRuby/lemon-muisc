@@ -599,7 +599,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { connectWS, connected as wsConnected, onWS, disconnectWS } from './ws.js'
 import { initPlayer, showFullscreenPlayer, playerNotice, clearPlayerNotice, setAutoMatchOnPlay, PLAYER_AUTO_MATCH_ON_PLAY_KEY } from './stores/player.js'
@@ -645,6 +645,7 @@ import ConfirmModal from './components/ConfirmModal.vue'
 import {
   appDialogState,
   appAlert,
+  appConfirm,
   confirmAppDialog,
   cancelAppDialog,
   setAppDialogInput,
@@ -1278,6 +1279,16 @@ function toggleTheme() {
 }
 
 async function handleLogout() {
+  const name = currentUser.value?.displayName || currentUser.value?.username || ''
+  const ok = await appConfirm({
+    title: '退出账号',
+    message: name ? `确定退出「${name}」？` : '确定退出当前账号？',
+    hint: '退出后需要重新登录才能继续使用。',
+    confirmText: '退出',
+    cancelText: '取消',
+    danger: true,
+  })
+  if (!ok) return
   disconnectWS()
   resetLibraryUserData()
   await authLogout()
@@ -1286,6 +1297,7 @@ async function handleLogout() {
 
 async function handleMobileLogout() {
   closeMobileMore()
+  await nextTick()
   await handleLogout()
 }
 
